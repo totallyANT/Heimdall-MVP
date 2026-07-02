@@ -6,7 +6,7 @@ export default function AdminTower({ onLogout }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const user = JSON.parse(localStorage.getItem("user"));
+  const user = JSON.parse(sessionStorage.getItem("user"));
   const adminId = user?.admin?.id;
   const [currentAdmin, setCurrentAdmin] = useState(null);
   const [provTab, setProvTab] = useState('resident'); 

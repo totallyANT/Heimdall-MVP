@@ -7,7 +7,7 @@ import AdminTower from './pages/AdminTower';
 
 export default function App() {
 
-  const storedUser = JSON.parse(localStorage.getItem("user"));
+  const storedUser = JSON.parse(sessionStorage.getItem("user"));
 
   const initialView = storedUser
     ? (
@@ -31,7 +31,7 @@ export default function App() {
 
   const handleLogout = () => {
 
-    localStorage.removeItem("user");
+    sessionStorage.removeItem("user");
 
     setCurrentView("login");
 

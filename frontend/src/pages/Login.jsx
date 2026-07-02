@@ -58,7 +58,7 @@ export default function Login({ onLogin }) {
 
       setSuccess(data.message);
 
-      localStorage.setItem("user", JSON.stringify(data));
+      sessionStorage.setItem("user", JSON.stringify(data));
 
       setTimeout(() => {
         onLogin(role);

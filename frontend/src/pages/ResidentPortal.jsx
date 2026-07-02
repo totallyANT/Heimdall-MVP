@@ -19,7 +19,7 @@ export default function ResidentPortal({ onLogout }) {
   const [showQrModal, setShowQrModal] = useState(false);
   const [announcements, setAnnouncements] = useState([]);
   const [currentAnnouncement, setCurrentAnnouncement] = useState(0);
-  const user = JSON.parse(localStorage.getItem("user"));
+  const user = JSON.parse(sessionStorage.getItem("user"));
   const residentId = user?.resident?.id;
   const today = new Date().toISOString().split("T")[0];
 
