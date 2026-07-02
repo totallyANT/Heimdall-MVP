@@ -6,7 +6,8 @@ from PIL import Image, ImageTk
 import threading
 import time
 import os
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 from pymongo import MongoClient
 
 # --- 1. GLOBAL STATE & THEME ---
@@ -38,9 +39,6 @@ try:
     guest_passes_collection = db_admin_res["guest_passes"]
     group_passes_collection = db_admin_res["group_passes"]
     
-    # Explicitly routing Entry Requests to admin_res
-    entry_requests_collection = db_admin_res["entry_requests"] 
-    
     # Logs
     incident_collection = db_heimdall["alert_actions"]
     
@@ -53,7 +51,6 @@ except Exception as e:
     guest_passes_collection = None
     group_passes_collection = None
     incident_collection = None
-    entry_requests_collection = None
 
 def async_db_log(payload):
     if incident_collection is None: return
@@ -95,7 +92,48 @@ def run_camera_engine():
             
         time.sleep(0.03)
 
-# --- 4. MAIN GATE KIOSK APPLICATION ---
+# --- 4. BACKGROUND SECURITY SWEEPER ---
+def database_sweeper():
+    """
+    Runs continuously in the background. Wakes up once an hour to 
+    delete facial biometrics from expired guest passes.
+    """
+    print("[SYSTEM] Background Security Sweeper Initialized.")
+    while True:
+        if guest_passes_collection is not None:
+            try:
+                today = datetime.now().date()
+                
+                # Find all passes that currently have a face stored
+                active_passes = guest_passes_collection.find({"embedding": {"$exists": True, "$ne": None}})
+                
+                for g_pass in active_passes:
+                    entry_str = g_pass.get("entry_date")
+                    duration = g_pass.get("duration_days", 1)
+                    
+                    if entry_str:
+                        # Convert string to date and calculate expiration
+                        entry_date = datetime.strptime(entry_str, "%Y-%m-%d").date()
+                        expiration_date = entry_date + timedelta(days=duration)
+                        
+                        # If the pass has expired
+                        if today > expiration_date:
+                            guest_passes_collection.update_one(
+                                {"_id": g_pass["_id"]},
+                                {
+                                    "$unset": {"embedding": ""}, 
+                                    "$set": {"status": "expired"}
+                                }
+                            )
+                            print(f"[SECURITY] Pass {g_pass.get('passId')} expired. Biometric data securely wiped.")
+                            
+            except Exception as e:
+                print(f"[ERROR] Sweeper encountered an issue: {e}")
+                
+        # Sleep for 1 hour (3600 seconds) before sweeping again
+        time.sleep(3600)
+
+# --- 5. MAIN GATE KIOSK APPLICATION ---
 class MainGateApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -119,7 +157,8 @@ class MainGateApp(ctk.CTk):
 
     def show_screen(self, frame_to_show):
         for frame in [self.idle_frame, self.menu_frame, self.resident_setup_frame, 
-                      self.visiting_help_frame, self.vendor_frame, self.visitor_frame, self.status_frame]:
+                      self.visiting_help_frame, self.vendor_frame, self.visitor_frame, 
+                      self.status_frame]:
             frame.pack_forget()
         frame_to_show.pack(expand=True, fill="both")
 
@@ -140,8 +179,12 @@ class MainGateApp(ctk.CTk):
         primary_frame = ctk.CTkFrame(self.menu_frame, fg_color="transparent")
         primary_frame.pack(pady=10)
         
-        ctk.CTkButton(primary_frame, text="Visitor", font=("Helvetica", 24, "bold"), height=80, width=300, command=lambda: self.show_screen(self.visitor_frame)).grid(row=0, column=0, padx=20)
-        ctk.CTkButton(primary_frame, text="Delivery / Vendor", font=("Helvetica", 24, "bold"), height=80, width=300, command=lambda: self.show_screen(self.vendor_frame)).grid(row=0, column=1, padx=20)
+        # UI UPDATE: Adjusted widths to fit 3 buttons nicely in a single row
+        ctk.CTkButton(primary_frame, text="Visitor", font=("Helvetica", 20, "bold"), height=80, width=250, command=lambda: self.show_screen(self.visitor_frame)).grid(row=0, column=0, padx=10)
+        ctk.CTkButton(primary_frame, text="Delivery / Vendor", font=("Helvetica", 20, "bold"), height=80, width=250, command=lambda: self.show_screen(self.vendor_frame)).grid(row=0, column=1, padx=10)
+        
+        # NEW WORKER ENTRY BUTTON
+        ctk.CTkButton(primary_frame, text="Worker Entry", font=("Helvetica", 20, "bold"), height=80, width=250, command=self.start_qr_scan).grid(row=0, column=2, padx=10)
         
         ctk.CTkLabel(self.menu_frame, text="Administration & Setup", font=("Helvetica", 18, "bold"), text_color="#64748B").pack(pady=(60, 10))
         secondary_frame = ctk.CTkFrame(self.menu_frame, fg_color="transparent")
@@ -187,27 +230,33 @@ class MainGateApp(ctk.CTk):
         self.vendor_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         ctk.CTkLabel(self.vendor_frame, text="Delivery / Vendor Access", font=("Helvetica", 28, "bold"), text_color="#0F172A").pack(pady=40)
         
-        ctk.CTkLabel(self.vendor_frame, text="Enter Destination Flat Number:", font=("Helvetica", 18), text_color="#333333").pack(pady=(20, 0))
-        self.vendor_flat_entry = ctk.CTkEntry(self.vendor_frame, placeholder_text="e.g. 402", font=("Helvetica", 20), width=300, height=50)
-        self.vendor_flat_entry.pack(pady=(5, 20))
+        ctk.CTkButton(self.vendor_frame, text="Check Pre-Approval", font=("Helvetica", 18), height=50, width=300, command=self.check_vendor_approval).pack(pady=10)
+        ctk.CTkLabel(self.vendor_frame, text="— OR REQUEST WALK-IN ENTRY —", font=("Helvetica", 14, "bold"), text_color="#64748B").pack(pady=20)
         
-        ctk.CTkButton(self.vendor_frame, text="Check Delivery Pre-Approval", font=("Helvetica", 20), height=60, width=300, command=self.check_vendor_approval).pack(pady=10)
-        ctk.CTkLabel(self.vendor_frame, text="— OR —", font=("Helvetica", 16), text_color="#64748B").pack(pady=10)
-        ctk.CTkButton(self.vendor_frame, text="Request Entry", font=("Helvetica", 18), height=50, width=300, fg_color="#cc7000", hover_color="#b35f00", command=lambda: self.trigger_entry_request(self.vendor_flat_entry.get(), "Vendor")).pack(pady=10)
-        ctk.CTkButton(self.vendor_frame, text="Back", font=("Helvetica", 16), fg_color="#b30000", hover_color="#800000", command=lambda: self.show_screen(self.menu_frame)).pack(pady=30)
+        self.vendor_flat_entry = ctk.CTkEntry(self.vendor_frame, placeholder_text="Destination Flat No. (e.g. 202)", font=("Helvetica", 18), width=350, height=50)
+        self.vendor_flat_entry.pack(pady=5)
+        
+        self.vendor_service_entry = ctk.CTkEntry(self.vendor_frame, placeholder_text="Delivery Service (e.g. Myntra)", font=("Helvetica", 18), width=350, height=50)
+        self.vendor_service_entry.pack(pady=5)
+        
+        ctk.CTkButton(self.vendor_frame, text="Generate Delivery Pass", font=("Helvetica", 18, "bold"), height=50, width=350, fg_color="#cc7000", hover_color="#b35f00", command=self.process_vendor_request).pack(pady=20)
+        ctk.CTkButton(self.vendor_frame, text="Back", font=("Helvetica", 16), fg_color="#b30000", hover_color="#800000", command=lambda: self.show_screen(self.menu_frame)).pack(pady=10)
 
     def build_visitor_screen(self):
         self.visitor_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         ctk.CTkLabel(self.visitor_frame, text="Visitor Entry", font=("Helvetica", 28, "bold"), text_color="#0F172A").pack(pady=40)
         
-        ctk.CTkButton(self.visitor_frame, text="Scan Mobile QR Code", font=("Helvetica", 20), height=60, width=300, command=self.start_qr_scan).pack(pady=10)
-        ctk.CTkLabel(self.visitor_frame, text="— OR —", font=("Helvetica", 16), text_color="#64748B").pack(pady=10)
-        ctk.CTkLabel(self.visitor_frame, text="Enter Destination Flat Number:", font=("Helvetica", 18), text_color="#333333").pack(pady=(10, 0))
-        self.visitor_flat_entry = ctk.CTkEntry(self.visitor_frame, placeholder_text="e.g. 402", font=("Helvetica", 20), width=300, height=50)
-        self.visitor_flat_entry.pack(pady=(5, 10))
+        ctk.CTkButton(self.visitor_frame, text="Scan Mobile QR Code", font=("Helvetica", 20), height=50, width=350, command=self.start_qr_scan).pack(pady=10)
+        ctk.CTkLabel(self.visitor_frame, text="— OR REQUEST WALK-IN ENTRY —", font=("Helvetica", 14, "bold"), text_color="#64748B").pack(pady=20)
         
-        ctk.CTkButton(self.visitor_frame, text="Request Entry", font=("Helvetica", 20), height=60, width=300, command=lambda: self.trigger_entry_request(self.visitor_flat_entry.get(), "Visitor")).pack(pady=10)
-        ctk.CTkButton(self.visitor_frame, text="Back", font=("Helvetica", 16), fg_color="#b30000", hover_color="#800000", command=lambda: self.show_screen(self.menu_frame)).pack(pady=30)
+        self.visitor_flat_entry = ctk.CTkEntry(self.visitor_frame, placeholder_text="Destination Flat No. (e.g. 444)", font=("Helvetica", 18), width=350, height=50)
+        self.visitor_flat_entry.pack(pady=5)
+        
+        self.visitor_name_entry = ctk.CTkEntry(self.visitor_frame, placeholder_text="Guest Name", font=("Helvetica", 18), width=350, height=50)
+        self.visitor_name_entry.pack(pady=5)
+        
+        ctk.CTkButton(self.visitor_frame, text="Generate Guest Pass", font=("Helvetica", 18, "bold"), height=50, width=350, fg_color="#059669", hover_color="#047857", command=self.process_visitor_request).pack(pady=20)
+        ctk.CTkButton(self.visitor_frame, text="Back", font=("Helvetica", 16), fg_color="#b30000", hover_color="#800000", command=lambda: self.show_screen(self.menu_frame)).pack(pady=10)
 
     def build_status_screen(self):
         self.status_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
@@ -233,7 +282,185 @@ class MainGateApp(ctk.CTk):
         SCAN_MODE = "IDLE"
         self.show_screen(self.idle_frame)
 
-    # --- LOGIC & DB INTEGRATION ---
+    # --- CONSOLIDATED WALK-IN ENTRY LOGIC ---
+    def process_visitor_request(self):
+        flat = self.visitor_flat_entry.get()
+        name = self.visitor_name_entry.get()
+
+        if not flat or not name:
+            self.status_msg.configure(text="Error: Flat Number and Name are required.", text_color="#FF0000")
+            self.show_screen(self.status_frame)
+            self.after(3000, self.return_to_home)
+            return
+
+        self.status_msg.configure(text=f"Preparing Pass for {name}...\nPlease look directly at the camera.", text_color="#0F172A")
+        self.show_screen(self.status_frame)
+        self.after(1500, lambda: self.finalize_visitor_pass(flat, name))
+
+    def finalize_visitor_pass(self, flat, guest_name):
+        with FRAME_LOCK:
+            if LATEST_FRAME is None: 
+                self.status_msg.configure(text="❌ Error: Camera Feed Offline.", text_color="#FF0000")
+                self.after(3000, self.return_to_home)
+                return
+            frame_to_scan = LATEST_FRAME.copy()
+
+        face_locations = face_recognition.face_locations(frame_to_scan, model="hog")
+        if not face_locations:
+            self.status_msg.configure(text="❌ Error: No face detected.\nPass Generation Cancelled.", text_color="#FF0000")
+            self.after(3000, self.return_to_home)
+            return
+
+        face_encodings = face_recognition.face_encodings(frame_to_scan, face_locations)
+        encoding_list = face_encodings[0].tolist()
+
+        resident = residents_collection.find_one({"flat_number": str(flat)})
+        resident_id = resident.get("resident_id") if resident else None
+        
+        today_str = datetime.now().strftime("%Y-%m-%d")
+
+        pass_payload = {
+            "passId": None,
+            "resident_id": resident_id, 
+            "resident_flat": str(flat),
+            "guest_name": guest_name,
+            "entry_date": today_str,
+            "duration_days": 1,
+            "status": "pending",
+            "embedding": encoding_list
+        }
+
+        try:
+            result = guest_passes_collection.insert_one(pass_payload)
+            self.visitor_flat_entry.delete(0, 'end')
+            self.visitor_name_entry.delete(0, 'end')
+            
+            self.status_msg.configure(text=f"Request Sent to Flat {flat}.\nAwaiting Resident Approval...", text_color="#0F172A")
+            threading.Thread(target=self.poll_visitor_approval, args=(result.inserted_id,), daemon=True).start()
+        except Exception as e:
+            self.status_msg.configure(text=f"❌ Failed to create pass:\n{str(e)}", text_color="#FF0000")
+            self.after(5000, self.return_to_home)
+
+    def process_vendor_request(self):
+        flat = self.vendor_flat_entry.get()
+        service = self.vendor_service_entry.get()
+
+        if not flat or not service:
+            self.status_msg.configure(text="Error: Flat Number and Service are required.", text_color="#FF0000")
+            self.show_screen(self.status_frame)
+            self.after(3000, self.return_to_home)
+            return
+
+        self.status_msg.configure(text=f"Logging {service} Delivery...\nPlease look directly at the camera.", text_color="#0F172A")
+        self.show_screen(self.status_frame)
+        self.after(1500, lambda: self.finalize_vendor_pass(flat, service))
+
+    def finalize_vendor_pass(self, flat, service):
+        with FRAME_LOCK:
+            if LATEST_FRAME is None: 
+                self.status_msg.configure(text="❌ Error: Camera Feed Offline.", text_color="#FF0000")
+                self.after(3000, self.return_to_home)
+                return
+            frame_to_scan = LATEST_FRAME.copy()
+
+        face_locations = face_recognition.face_locations(frame_to_scan, model="hog")
+        if not face_locations:
+            self.status_msg.configure(text="❌ Error: No face detected.\nLogging Cancelled.", text_color="#FF0000")
+            self.after(3000, self.return_to_home)
+            return
+
+        face_encodings = face_recognition.face_encodings(frame_to_scan, face_locations)
+        encoding_list = face_encodings[0].tolist()
+
+        resident = residents_collection.find_one({"flat_number": str(flat)})
+        resident_id = resident.get("resident_id") if resident else None
+        
+        delivery_payload = {
+            "delivery_id": None,
+            "resident_id": resident_id, 
+            "resident_flat": str(flat),
+            "delivery_service": service,
+            "arrival_window": "1hour",
+            "status": "pending",
+            "embedding": encoding_list 
+        }
+
+        try:
+            result = delivery_collection.insert_one(delivery_payload)
+            self.vendor_flat_entry.delete(0, 'end')
+            self.vendor_service_entry.delete(0, 'end')
+            
+            self.status_msg.configure(text=f"Delivery Logged.\nAwaiting Resident Approval from Flat {flat}...", text_color="#0F172A")
+            threading.Thread(target=self.poll_vendor_approval, args=(result.inserted_id, service, flat), daemon=True).start()
+        except Exception as e:
+            self.status_msg.configure(text=f"❌ Failed to log delivery:\n{str(e)}", text_color="#FF0000")
+            self.after(5000, self.return_to_home)
+
+    def check_vendor_approval(self):
+        flat = self.vendor_flat_entry.get()
+        if not flat:
+            self.status_msg.configure(text="Error: Please enter a Flat Number for Pre-Approval check.", text_color="#FF0000")
+            self.show_screen(self.status_frame)
+            self.after(3000, self.return_to_home)
+            return
+            
+        match = delivery_collection.find_one({"resident_flat": flat, "status": "active"})
+        
+        if match:
+            window = match.get("arrival_window", "").lower()
+            
+            if window == "1hour":
+                self.status_msg.configure(text=f"✅ Delivery Pre-Approval Verified.\nACCESS GRANTED.", text_color="#10B981")
+                delivery_collection.update_one({"_id": match["_id"]}, {"$set": {"status": "PASSED_GATE", "gate_entry_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")}})
+                threading.Thread(target=async_db_log, args=({"timestamp": datetime.now(), "incident_type": "VENDOR_ENTRY", "identity": match.get('delivery_service', 'Vendor'), "flat": flat},)).start()
+            else:
+                self.status_msg.configure(text=f"❌ Access Denied: Arrived outside of scheduled '{window}' window.", text_color="#F59E0B")
+        else:
+            self.status_msg.configure(text=f"❌ No active deliveries found for Flat {flat}.", text_color="#FF0000")
+            
+        self.show_screen(self.status_frame)
+        self.after(4000, self.return_to_home)
+
+    def poll_visitor_approval(self, doc_id):
+        max_attempts = 30
+        for _ in range(max_attempts):
+            time.sleep(2)
+            req = guest_passes_collection.find_one({"_id": doc_id})
+            if not req: continue
+            
+            if req["status"] == "active":
+                self.after(0, lambda: self.status_msg.configure(text=f"✅ ACCESS GRANTED by Resident!\nPass {req.get('passId', '')} Activated.", text_color="#10B981"))
+                self.after(5000, self.return_to_home)
+                return
+            elif req["status"] == "denied":
+                self.after(0, lambda: self.status_msg.configure(text="❌ ACCESS DENIED by Resident.", text_color="#FF0000"))
+                self.after(5000, self.return_to_home)
+                return
+                
+        self.after(0, lambda: self.status_msg.configure(text="⏳ No response from resident.\nRequest is still pending.", text_color="#F59E0B"))
+        self.after(5000, self.return_to_home)
+
+    def poll_vendor_approval(self, doc_id, service, flat):
+        max_attempts = 30
+        for _ in range(max_attempts):
+            time.sleep(2)
+            req = delivery_collection.find_one({"_id": doc_id})
+            if not req: continue
+            
+            if req["status"] in ["active", "PASSED_GATE"]:
+                self.after(0, lambda: self.status_msg.configure(text=f"✅ ACCESS GRANTED by Resident!\nDelivery Logged for Flat {flat}.", text_color="#10B981"))
+                threading.Thread(target=async_db_log, args=({"timestamp": datetime.now(), "incident_type": "VENDOR_WALK_IN_APPROVED", "identity": service, "flat": flat},)).start()
+                self.after(5000, self.return_to_home)
+                return
+            elif req["status"] == "denied":
+                self.after(0, lambda: self.status_msg.configure(text="❌ ACCESS DENIED by Resident.", text_color="#FF0000"))
+                self.after(5000, self.return_to_home)
+                return
+                
+        self.after(0, lambda: self.status_msg.configure(text="⏳ No response from resident.\nRequest is still pending.", text_color="#F59E0B"))
+        self.after(5000, self.return_to_home)
+
+    # --- DB SETUP LOGIC ---
     def submit_resident_registration(self):
         flat = self.res_flat_entry.get()
         name = self.res_name_entry.get()
@@ -332,36 +559,7 @@ class MainGateApp(ctk.CTk):
         self.show_screen(self.status_frame)
         self.after(4000, self.return_to_home)
 
-    def check_vendor_approval(self):
-        flat = self.vendor_flat_entry.get()
-        if not flat:
-            self.status_msg.configure(text="Error: Please enter a Flat Number.", text_color="#FF0000")
-            self.show_screen(self.status_frame)
-            return
-            
-        match = delivery_collection.find_one({"resident_flat": flat, "status": "active"})
-        
-        if match:
-            current_hour = datetime.now().hour
-            window = match.get("arrival_window", "").lower()
-            is_valid_time = False
-            
-            if window == "morning" and 8 <= current_hour < 12: is_valid_time = True
-            elif window == "afternoon" and 12 <= current_hour < 16: is_valid_time = True
-            elif window == "evening" and 16 <= current_hour < 20: is_valid_time = True
-            
-            if is_valid_time:
-                self.status_msg.configure(text=f"✅ Delivery Pre-Approval Verified.\nACCESS GRANTED.", text_color="#10B981")
-                delivery_collection.update_one({"_id": match["_id"]}, {"$set": {"status": "used"}})
-                threading.Thread(target=async_db_log, args=({"timestamp": datetime.now(), "incident_type": "VENDOR_ENTRY", "identity": match.get('delivery_service', 'Vendor'), "flat": flat},)).start()
-            else:
-                self.status_msg.configure(text=f"❌ Access Denied: Arrived outside of scheduled '{window}' window.", text_color="#F59E0B")
-        else:
-            self.status_msg.configure(text=f"❌ No active deliveries found for Flat {flat}.", text_color="#FF0000")
-            
-        self.show_screen(self.status_frame)
-        self.after(4000, self.return_to_home)
-
+    # --- QR SCAN LOGIC ---
     def start_qr_scan(self):
         global SCAN_MODE, QR_RESULT
         SCAN_MODE = "QR"
@@ -380,6 +578,15 @@ class MainGateApp(ctk.CTk):
             QR_RESULT = None 
             today_str = datetime.now().strftime("%Y-%m-%d")
 
+            # 1. Check Worker Passes (NEW FEATURE)
+            worker_match = worker_passes_collection.find_one({"$or": [{"passId": scanned_token}, {"qrData": scanned_token}], "status": "active"})
+            if worker_match:
+                self.status_msg.configure(text=f"✅ Welcome {worker_match.get('worker_name', 'Worker')}!\nWorker Pass Verified. ACCESS GRANTED.", text_color="#10B981")
+                threading.Thread(target=async_db_log, args=({"timestamp": datetime.now(), "incident_type": "WORKER_ENTRY", "identity": worker_match.get('worker_name', 'Worker'), "flat": worker_match.get('resident_flat', 'Unknown')},)).start()
+                self.after(4000, self.return_to_home)
+                return
+
+            # 2. Check Guest Passes
             guest_match = guest_passes_collection.find_one({"$or": [{"passId": scanned_token}, {"qrData": scanned_token}], "status": "active"})
             if guest_match:
                 if guest_match.get("entry_date") != today_str:
@@ -407,6 +614,7 @@ class MainGateApp(ctk.CTk):
                 self.after(4000, self.return_to_home)
                 return
 
+            # 3. Check Group Passes
             group_match = group_passes_collection.find_one({"$or": [{"passId": scanned_token}, {"qrData": scanned_token}], "status": "active"})
             if group_match:
                 if group_match.get("entry_date") != today_str:
@@ -434,83 +642,16 @@ class MainGateApp(ctk.CTk):
 
         self.after(100, self.poll_for_qr) 
 
-    # --- FACE CAPTURE FOR MANUAL ENTRY REQUEST ---
-    def trigger_entry_request(self, flat, access_type):
-        if not flat:
-            self.status_msg.configure(text="Error: Please enter a Flat Number.", text_color="#FF0000")
-            self.show_screen(self.status_frame)
-            return
-
-        if entry_requests_collection is None:
-            self.status_msg.configure(text="Database connection offline.", text_color="#FF0000")
-            self.show_screen(self.status_frame)
-            return
-
-        encoding_list = None
-        
-        # UI FIX: Added the exact same staging screen that the QR flow uses
-        if access_type == "Visitor":
-            self.status_msg.configure(text="Preparing Request...\nPlease look directly at the camera.", text_color="#0F172A")
-            self.show_screen(self.status_frame)
-            
-            # This forces the UI to physically change the text BEFORE freezing to take the picture
-            self.update()
-            time.sleep(1.5) 
-
-            with FRAME_LOCK:
-                if LATEST_FRAME is None: return
-                frame_to_scan = LATEST_FRAME.copy()
-
-            face_locations = face_recognition.face_locations(frame_to_scan, model="hog")
-            if not face_locations:
-                self.status_msg.configure(text="❌ Error: No face detected.\nRequest Cancelled.", text_color="#FF0000")
-                self.after(3000, self.return_to_home)
-                return
-
-            face_encodings = face_recognition.face_encodings(frame_to_scan, face_locations)
-            encoding_list = face_encodings[0].tolist()
-        else:
-            self.show_screen(self.status_frame)
-
-        # Build the payload
-        request_payload = {
-            "flat": flat, 
-            "type": access_type, 
-            "status": "pending", 
-            "timestamp": datetime.now()
-        }
-        
-        # Inject the face array directly into the request document
-        if encoding_list:
-            request_payload["embedding"] = encoding_list
-
-        result = entry_requests_collection.insert_one(request_payload)
-
-        self.status_msg.configure(text=f"Entry Request Sent.\nAwaiting Resident Approval from Flat {flat}...", text_color="#0F172A")
-        threading.Thread(target=self.poll_for_entry_approval, args=(result.inserted_id,), daemon=True).start()
-
-    def poll_for_entry_approval(self, request_id):
-        max_attempts = 30
-        for _ in range(max_attempts):
-            time.sleep(2)
-            req = entry_requests_collection.find_one({"_id": request_id})
-            if not req: continue
-            
-            if req["status"] == "approved":
-                self.after(0, lambda: self.status_msg.configure(text="✅ ACCESS GRANTED by Resident!", text_color="#10B981"))
-                self.after(4000, self.return_to_home)
-                return
-            elif req["status"] == "denied":
-                self.after(0, lambda: self.status_msg.configure(text="❌ ACCESS DENIED by Resident.", text_color="#FF0000"))
-                self.after(4000, self.return_to_home)
-                return
-                
-        self.after(0, lambda: self.status_msg.configure(text="Request Timed Out.\nResident did not respond to the request.", text_color="#F59E0B"))
-        entry_requests_collection.update_one({"_id": request_id}, {"$set": {"status": "expired"}})
-        self.after(4000, self.return_to_home)
 
 if __name__ == "__main__":
+    # Start the Camera Engine
     camera_thread = threading.Thread(target=run_camera_engine, daemon=True)
     camera_thread.start()
+    
+    # Start the Data Sweeper
+    sweeper_thread = threading.Thread(target=database_sweeper, daemon=True)
+    sweeper_thread.start()
+    
+    # Launch UI
     app = MainGateApp()
     app.mainloop()
