@@ -1,4 +1,5 @@
 import { useState,useEffect } from 'react';
+const API = "http://127.0.0.1:8000";
 
 export default function AdminTower({ onLogout }) {
   const [lockdown, setLockdown] = useState(false);
@@ -19,12 +20,8 @@ export default function AdminTower({ onLogout }) {
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcastSent, setBroadcastSent] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [users, setUsers] = useState([
-    { id: 'res_142', name: 'John Doe', role: 'Resident', score: 95, status: 'Active', color: 'text-emerald-400', roleColor: 'bg-gray-800' },
-    { id: 'res_250', name: 'Bob Vance', role: 'Contractor', score: 70, status: 'Flagged', color: 'text-yellow-400', roleColor: 'bg-blue-900/30 text-blue-400 border border-blue-800/50' },
-    { id: 'sec_001', name: 'Unit Alpha', role: 'Security', score: 100, status: 'Active', color: 'text-emerald-400', roleColor: 'bg-gray-800 text-gray-400' },
-    { id: 'adm_441', name: 'Alice Smith', role: 'Admin', score: 99, status: 'Active', color: 'text-emerald-400', roleColor: 'bg-purple-900/30 text-purple-400 border border-purple-800/50' },
-  ]);
+  const [users, setUsers] = useState([]);
+   
 
   const loadDashboard = async () => {
 
@@ -71,21 +68,67 @@ export default function AdminTower({ onLogout }) {
     }
 
   };
-  useEffect(() => {
+  const fetchDirectory = async () => {
+    try {
+        const response = await fetch(
+            "http://127.0.0.1:8000/community/community-directory"
+        );
 
-      loadDashboard();
+        const data = await response.json();
 
-      const interval = setInterval(loadDashboard, 3000);
+        console.log("Community Data:", data);
 
-      return () => clearInterval(interval);
+        const formatted = data.map((item) => ({
+            id: item.id,
+            name: item.name,
+            role: item.role,
+            score: item.score,
+            status: item.status,
+            isInitialized: item.is_initialized,
+            color: item.score >= 80 ? "text-emerald-400" : "text-yellow-400",
+            roleColor:
+                item.role === "Resident"
+                    ? "bg-gray-800"
+                    : "bg-blue-900/30 text-blue-400 border border-blue-800/50",
+        }));
 
-  }, []);
+        console.log("Formatted:", formatted);
 
-  const filteredUsers = users.filter(u => {
-    const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = directoryRoleFilter === 'All' || u.role === directoryRoleFilter;
+        setUsers(formatted);
+
+    } catch (err) {
+        console.error(err);
+    }
+};
+ useEffect(() => {
+
+    loadDashboard();
+    fetchDirectory();
+
+    const interval = setInterval(() => {
+        loadDashboard();
+        fetchDirectory();
+    }, 3000);
+
+    return () => clearInterval(interval);
+
+}, []);
+
+  const filteredUsers = users.filter((u) => {
+    const name = (u.name || "").toLowerCase();
+    const id = (u.id || "").toLowerCase();
+    const query = searchQuery.toLowerCase();
+
+    const matchesSearch =
+        name.includes(query) ||
+        id.includes(query);
+
+    const matchesFilter =
+        directoryRoleFilter === "All" ||
+        u.role === directoryRoleFilter;
+
     return matchesSearch && matchesFilter;
-  });
+});
 
 
   const handleNumResidentsChange = (e) => {
@@ -122,7 +165,8 @@ export default function AdminTower({ onLogout }) {
           }),
         });
       } else {
-        response = await fetch(`${API}/security/generate-security-guards`, {
+       response = await fetch(
+    `${API}/security/generate-security-guards`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -157,48 +201,75 @@ export default function AdminTower({ onLogout }) {
 
   const handleBroadcast = async (e) => {
     e.preventDefault();
-    setBroadcastSent(true);
-    setBroadcastMsg('');
-    setTimeout(() => setBroadcastSent(false), 3000);
-  };
-
-  const handleAssignGuard = async (alertId) => {
 
     try {
 
         const response = await fetch(
-
-            `http://127.0.0.1:8000/alerts/${alertId}/assign/GRD-101`,
-
+            "http://127.0.0.1:8000/announcement/send-announcement",
             {
-
-                method: "POST"
-
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    title: broadcastTitle,
+                    message: broadcastMsg,
+                }),
             }
-
         );
 
         if (!response.ok) {
-
-            throw new Error("Failed to assign guard");
-
+            throw new Error("Failed to send announcement");
         }
 
-        // Refresh alerts after assignment
-        loadDashboard();
+        alert("Announcement sent successfully!");
 
-    }
+        setBroadcastTitle("");
+        setBroadcastMsg("");
 
-    catch (err) {
-
+    } catch (err) {
         console.error(err);
-
-        alert("Unable to assign guard.");
-
+        alert("Failed to send announcement");
     }
+};
+const handleRemoveUserDirect = async (user) => {
 
-  };
+    const confirmDelete = window.confirm(
+        `Are you sure you want to revoke ${user.name}?`
+    );
 
+    if (!confirmDelete) return;
+
+    try {
+
+        const endpoint =
+            user.role === "Resident"
+                ? `http://127.0.0.1:8000/community/resident/${user.id}`
+                : `http://127.0.0.1:8000/community/guard/${user.id}`;
+
+        const response = await fetch(endpoint, {
+            method: "DELETE",
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.detail || "Failed to revoke user");
+        }
+
+        alert(data.message);
+
+        // Remove from UI immediately
+        setUsers(prev => prev.filter(u => u.id !== user.id));
+
+        // OR reload from backend
+        // fetchDirectory();
+
+    } catch (err) {
+        console.error(err);
+        alert(err.message);
+    }
+};
   return (
     <div className={`min-h-screen font-sans text-gray-200 transition-colors duration-500 overflow-x-hidden w-full pb-10 ${lockdown ? 'bg-red-950/90' : 'bg-gray-950'}`}>
       <nav className="bg-gray-900 border-b border-purple-900/50 px-6 py-4 flex justify-between items-center sticky top-0 z-40">
@@ -632,12 +703,9 @@ export default function AdminTower({ onLogout }) {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end space-x-3">
-                        <button 
-                          onClick={() => handleRemoveUserDirect(u.id)}
-                          className="text-purple-400 hover:text-purple-300 text-xs font-sans"
-                        >
-                          Revoke
-                        </button>
+                        <button onClick={() => handleRemoveUserDirect(u)}>
+    Revoke
+</button>
                       </div>
                     </td>
                   </tr>

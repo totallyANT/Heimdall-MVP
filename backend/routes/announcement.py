@@ -11,19 +11,22 @@ router = APIRouter()
 @router.post("/send-announcement")
 def send_announcement(data: AnnouncementRequest):
 
+    print("Received:", data)
+
     announcement = {
         "title": data.title,
         "message": data.message,
         "created_at": datetime.now(ZoneInfo("Asia/Kolkata"))
     }
 
-    db.announcements_collection.insert_one(announcement)
+    result = db.announcements_collection.insert_one(announcement)
+
+    print("Inserted ID:", result.inserted_id)
 
     return {
         "status": "success",
         "message": "Announcement stored successfully."
     }
-
 
 @router.get("/announcements")
 def get_announcements():
