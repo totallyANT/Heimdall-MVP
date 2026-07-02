@@ -25,7 +25,7 @@ QR_RESULT = None
 MONGO_URI = "mongodb+srv://poojithamalleswari_db_user:bwBTe9tkuhve4goF@cluster0.3zl7rtj.mongodb.net/"
 
 try:
-    print("Connecting to MongoDB Atlas 'admin_res' Cluster...")
+    print("Connecting to MongoDB Atlas cluster...")
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
     
     # Primary Database Mapping based on Schema
