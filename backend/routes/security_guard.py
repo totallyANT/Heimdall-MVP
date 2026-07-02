@@ -2,7 +2,6 @@ from fastapi import APIRouter
 
 from schema import SecurityGuardRequest
 from database import db
-from generator import generate_password
 
 router = APIRouter()
 
@@ -12,23 +11,21 @@ def generate_security_guards(data: SecurityGuardRequest):
 
     output = []
 
-    start_id = 101
+    for _ in range(data.number_of_new_guards):
 
-    while db.security_guards.find_one(
-        {"id": f"guard_{start_id}"}
-    ):
-        start_id += 1
+        start_id = 101
 
-    for i in range(data.number_of_new_guards):
-
-        guard_id = start_id + i
+        # Find the next available ID
+        while db.security_guards.find_one({"id": f"GRD-{start_id}"}):
+            start_id += 1
 
         guard = {
-            "id": f"guard_{guard_id}",
-            "password": generate_password(),
+            "id": f"GRD-{start_id}",
+            "password": "guard123",
             "full_name": None,
             "age": None,
-            "phone": None,
+            "phone": "",
+            "station": "Gate House Alpha",
             "is_initialized": False
         }
 

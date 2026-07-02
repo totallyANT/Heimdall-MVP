@@ -11,14 +11,14 @@ export default function App() {
 
   const initialView = storedUser
     ? (
-        storedUser.resident
-          ? "Resident"
-          : storedUser.guard
+      storedUser.resident
+        ? "Resident"
+        : storedUser.guard
           ? "Security"
           : storedUser.admin
-          ? "Admin"
-          : "login"
-      )
+            ? "Admin"
+            : "login"
+    )
     : "login";
 
   const [currentView, setCurrentView] = useState(initialView);

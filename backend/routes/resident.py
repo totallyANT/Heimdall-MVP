@@ -3,8 +3,10 @@ from pydantic import BaseModel
 
 from database import db
 from schema import ResidentRequest
-from generator import generate_password
 from datetime import datetime, timedelta
+from bson import ObjectId
+from zoneinfo import ZoneInfo
+import uuid
 
 router = APIRouter()
 
@@ -28,7 +30,7 @@ def normalize_plate(plate: str):
 @router.get("/profile/{resident_id}")
 def get_resident_profile(resident_id: str):
 
-    resident =  db.residents.find_one({
+    resident = db.residents.find_one({
         "id": resident_id
     })
 
@@ -192,16 +194,17 @@ def generate_identities(data: ResidentRequest):
     for index, badge in enumerate(data.resident_badge_ids, start=1):
 
         resident = {
-            "id": f"res_{data.flat_number}_{index}",
+            "id": f"RES-{data.flat_number}-{index}",
             "flat_number": data.flat_number,
             "badge": badge,
-            "password": generate_password(),
+            "password": "pass123",
             "full_name": None,
             "age": None,
             "phone": None,
             "is_initialized": False,
             "vehicles": [],
-            "card_status": "active"
+            "card_status": "active",
+            "trust_score": 100
         }
 
         db.residents.insert_one(resident)
@@ -222,7 +225,7 @@ def get_recent_announcements():
 
     cutoff = datetime.now() - timedelta(hours=24)
 
-    announcements =  db.announcements_collection.find({
+    announcements = db.announcements_collection.find({
         "created_at": {"$gte": cutoff}
     }).sort("created_at", -1).to_list(length=50)
 
@@ -237,4 +240,200 @@ def get_recent_announcements():
 
     return {
         "announcements": result
+    }
+
+# ---------- Get Pending Requests ----------
+
+
+@router.get("/pending-requests/{resident_id}")
+def get_pending_requests(resident_id: str):
+
+    resident = db.residents.find_one({
+        "id": resident_id
+    })
+
+    if not resident:
+        raise HTTPException(
+            status_code=404,
+            detail="Resident not found"
+        )
+
+    flat = resident["flat_number"]
+
+    pending_deliveries = []
+    delivery_cursor = db.delivery_notifications.find({
+        "resident_flat": flat,
+        "status": "pending"
+    })
+
+    for delivery in delivery_cursor:
+        pending_deliveries.append({
+            "request_id": str(delivery["_id"]),
+            "type": "delivery",
+            "delivery_service": delivery["delivery_service"],
+            "arrival_window": delivery["arrival_window"]
+        })
+
+    pending_visitors = []
+    visitor_cursor = db.guest_passes.find({
+        "resident_flat": flat,
+        "status": "pending"
+    })
+
+    for visitor in visitor_cursor:
+        pending_visitors.append({
+            "request_id": str(visitor["_id"]),
+            "type": "visitor",
+            "guest_name": visitor["guest_name"],
+            "entry_date": visitor["entry_date"],
+            "duration_days": visitor["duration_days"]
+        })
+
+    return {
+        "pending_deliveries": pending_deliveries,
+        "pending_visitors": pending_visitors
+    }
+
+# ---------- Approve Pending Requests for deliveries ----------
+
+
+@router.post("/approve-request/{resident_id}/{request_type}/{request_id}")
+def approve_request(
+    resident_id: str,
+    request_type: str,
+    request_id: str
+):
+    resident = db.residents.find_one({"id": resident_id})
+
+    if not resident:
+        raise HTTPException(
+            status_code=404,
+            detail="Resident not found"
+        )
+
+    if request_type == "delivery":
+        count = db.delivery_notifications.count_documents({
+            "delivery_id": {"$ne": None}
+        })
+
+        delivery_id = f"DLV-{count + 101}"
+
+        approved_time = datetime.now(
+            ZoneInfo("Asia/Kolkata")
+        ).strftime("%Y-%m-%d %H:%M:%S IST")
+
+        result = db.delivery_notifications.update_one(
+            {
+                "_id": ObjectId(request_id),
+                "status": "pending"
+            },
+            {
+                "$set": {
+                    "delivery_id": delivery_id,
+                    "resident_id": resident_id,
+                    "status": "active",
+                    "approved_time": approved_time
+                }
+            }
+        )
+
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Already handled"
+            )
+
+        return {
+            "message": "Delivery approved",
+            "delivery_id": delivery_id
+        }
+
+    # --------- Approve Pending Requests for visitors ----------
+    elif request_type == "visitor":
+        count = db.guest_passes.count_documents({
+            "passId": {"$ne": None}
+        })
+
+        pass_id = f"VIS-{count + 101}"
+        token = uuid.uuid4().hex
+
+        result = db.guest_passes.update_one(
+            {
+                "_id": ObjectId(request_id),
+                "status": "pending"
+            },
+            {
+                "$set": {
+                    "passId": pass_id,
+                    "resident_id": resident_id,
+                    "status": "active",
+                    "qrData.token": token
+                }
+            }
+        )
+
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Already handled"
+            )
+
+        return {
+            "message": "Visitor approved",
+            "passId": pass_id,
+            "qr_url": f"/qr/{pass_id}"
+        }
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid request type"
+        )
+
+# ---------- Reject Pending Requests ----------
+
+
+@router.post("/reject-request/{request_type}/{request_id}")
+def reject_request(request_type: str, request_id: str):
+
+    if request_type == "delivery":
+        result = db.delivery_notifications.update_one(
+            {
+                "_id": ObjectId(request_id),
+                "status": "pending"
+            },
+            {
+                "$set": {
+                    "status": "rejected"
+                }
+            }
+        )
+
+    elif request_type == "visitor":
+        result = db.guest_passes.update_one(
+            {
+                "_id": ObjectId(request_id),
+                "status": "pending"
+            },
+            {
+                "$set": {
+                    "status": "rejected"
+                }
+            }
+        )
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid request type"
+        )
+
+    if result.modified_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Already handled"
+        )
+
+    return {
+        "message": "Request rejected"
     }

@@ -10,19 +10,19 @@ export default function AdminTower({ onLogout }) {
   const user = JSON.parse(sessionStorage.getItem("user"));
   const adminId = user?.admin?.id;
   const [currentAdmin, setCurrentAdmin] = useState(null);
-  const [provTab, setProvTab] = useState('resident'); 
+  const [provTab, setProvTab] = useState('resident');
   const [numResidents, setNumResidents] = useState(1);
   const [flatNum, setFlatNum] = useState('');
   const [badges, setBadges] = useState(['']);
   const [numSec, setNumSec] = useState(1);
   const [directoryRoleFilter, setDirectoryRoleFilter] = useState("All");
   const [generatedCreds, setGeneratedCreds] = useState(null);
-  const [broadcastTitle, setBroadcastTitle] = useState(''); 
+  const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcastSent, setBroadcastSent] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [users, setUsers] = useState([]);
-    
+
   const loadDashboard = async () => {
     try {
       const alertsResponse = await fetch(
@@ -103,7 +103,7 @@ export default function AdminTower({ onLogout }) {
     const num = parseInt(e.target.value) || 1;
     setNumResidents(num);
     const newBadges = [...badges];
-    while(newBadges.length < num) newBadges.push('');
+    while (newBadges.length < num) newBadges.push('');
     setBadges(newBadges.slice(0, num));
   };
 
@@ -319,7 +319,7 @@ export default function AdminTower({ onLogout }) {
                 {alerts.filter(a => a.severity === "High" && !a.resolved).length} High
               </span>
             </div>
-            
+
             <div className="p-4 space-y-4 overflow-y-auto max-h-[650px]" style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
               {loading ? (
                 <div className="flex justify-center items-center py-20">
@@ -334,7 +334,7 @@ export default function AdminTower({ onLogout }) {
               ) : (
                 /* 🛠️ Dynamic Flex Matrix: Fills full panel space when only 1 item exists */
                 <div className="flex flex-col md:flex-row md:flex-wrap gap-4 w-full">
-                  {alerts.filter(a => a.severity === "High" && !a.resolved)   
+                  {alerts.filter(a => a.severity === "High" && !a.resolved)
                     .map((alert, idx) => (
                       <div key={alert._id || alert.id || idx} className="bg-gray-950 border border-red-900 rounded-xl p-5 flex flex-col justify-between flex-1 min-w-[300px] max-w-full">
                         <div>
@@ -377,7 +377,7 @@ export default function AdminTower({ onLogout }) {
               <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Priority Broadcast</h2>
             </div>
             <p className="text-[10px] text-gray-500 mb-4 uppercase tracking-widest">Push notification to all residents</p>
-            
+
             <form onSubmit={handleBroadcast} className="space-y-4 flex-1 flex flex-col">
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">Broadcast Title</label>

@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { getResidentAlerts } from "../services/alerts";
 import ResidentBot from '../components/ResidentBot';
 
@@ -22,6 +22,11 @@ export default function ResidentPortal({ onLogout }) {
   const user = JSON.parse(sessionStorage.getItem("user"));
   const residentId = user?.resident?.id;
   const today = new Date().toISOString().split("T")[0];
+  const [pendingPopup, setPendingPopup] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState({
+    pending_deliveries: [],
+    pending_visitors: []
+  });
 
   const triggerAlert = () => {
     setToast(true);
@@ -298,6 +303,78 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
+  const fetchPendingRequests = async () => {
+    const response = await fetch(
+      `http://127.0.0.1:8000/resident/pending-requests/${residentId}`
+    );
+
+    const data = await response.json();
+    console.log(data);
+
+    setPendingRequests(data);
+
+    if (
+      data.pending_deliveries.length > 0 ||
+      data.pending_visitors.length > 0
+    ) {
+      setPendingPopup(true);
+    } else {
+      setPendingPopup(false);   // IMPORTANT
+    }
+  };
+
+  const approveRequest = async (requestType, requestId) => {
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/resident/approve-request/${residentId}/${requestType}/${requestId}`,
+        {
+          method: "POST"
+        }
+      );
+
+      const data = await response.json();
+
+      alert(data.message);
+
+      await fetchPendingRequests();
+
+      if (
+        pendingRequests.pending_deliveries.length === 0 &&
+        pendingRequests.pending_visitors.length === 0
+      ) {
+        setPendingPopup(false);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const rejectRequest = async (requestType, requestId) => {
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/resident/reject-request/${requestType}/${requestId}`,
+        {
+          method: "POST"
+        }
+      );
+
+      const data = await response.json();
+
+      alert(data.message);
+
+      await fetchPendingRequests();
+
+      if (
+        pendingRequests.pending_deliveries.length === 0 &&
+        pendingRequests.pending_visitors.length === 0
+      ) {
+        setPendingPopup(false);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const nextAnnouncement = () => {
     setCurrentAnnouncement((prev) =>
       prev === announcements.length - 1 ? 0 : prev + 1
@@ -338,6 +415,10 @@ export default function ResidentPortal({ onLogout }) {
       alert(err.message);
     }
   };
+
+  useEffect(() => {
+    fetchPendingRequests();
+  }, []);
 
   useEffect(() => {
     const fetchAnnouncements = async () => {
@@ -388,20 +469,20 @@ export default function ResidentPortal({ onLogout }) {
 
   useEffect(() => {
 
-      if (!residentId) return;
+    if (!residentId) return;
 
-      const loadAlerts = async () => {
+    const loadAlerts = async () => {
 
-          try {
-              const data = await getResidentAlerts(residentId);
-              setAlerts(data);
-          } catch (err) {
-            console.error(err);
-          }
-      };
-      loadAlerts();
-      const interval = setInterval(loadAlerts, 5000);
-      return () => clearInterval(interval);
+      try {
+        const data = await getResidentAlerts(residentId);
+        setAlerts(data);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadAlerts();
+    const interval = setInterval(loadAlerts, 5000);
+    return () => clearInterval(interval);
   }, [residentId]);
 
   return (
@@ -419,6 +500,83 @@ export default function ResidentPortal({ onLogout }) {
           <button onClick={onLogout} className="text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 text-red-400 px-4 py-2 rounded-lg transition">Sign Out</button>
         </div>
       </nav>
+
+      {pendingPopup && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
+          <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-white">
+              Pending Approval Requests
+            </h2>
+
+            {/* Deliveries */}
+            {pendingRequests?.pending_deliveries?.map((delivery) => (
+              <div
+                key={delivery.request_id}
+                className="mb-4 p-4 border border-gray-700 rounded"
+              >
+                <p className="text-white">
+                  Delivery from <b>{delivery.delivery_service}</b>
+                </p>
+                <p className="text-gray-400 text-sm">
+                  Window: {delivery.arrival_window}
+                </p>
+
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() =>
+                      approveRequest("delivery", delivery.request_id)
+                    }
+                    className="bg-green-600 px-4 py-2 rounded"
+                  >
+                    Allow
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      rejectRequest("delivery", delivery.request_id)
+                    }
+                    className="bg-red-600 px-4 py-2 rounded"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {/* Visitors */}
+            {pendingRequests?.pending_visitors?.map((visitor) => (
+              <div
+                key={visitor.request_id}
+                className="mb-4 p-4 border border-gray-700 rounded"
+              >
+                <p className="text-white">
+                  Visitor <b>{visitor.guest_name}</b> is here for <b>{visitor.duration_days} days</b>
+                </p>
+
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() =>
+                      approveRequest("visitor", visitor.request_id)
+                    }
+                    className="bg-green-600 px-4 py-2 rounded"
+                  >
+                    Allow
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      rejectRequest("visitor", visitor.request_id)
+                    }
+                    className="bg-red-600 px-4 py-2 rounded"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showProfile && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4 animate-fadeIn">
@@ -531,7 +689,7 @@ export default function ResidentPortal({ onLogout }) {
             </div>
           )}
         </div>
-        
+
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="space-y-6">
@@ -657,53 +815,53 @@ export default function ResidentPortal({ onLogout }) {
                 className="p-4 space-y-3 overflow-y-auto h-[500px]"
                 style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}
               >
-              {
-                alerts.length === 0 ? (
+                {
+                  alerts.length === 0 ? (
 
-                  <div className="text-green-400 text-sm">
-                    No active security alerts.
-                  </div>
+                    <div className="text-green-400 text-sm">
+                      No active security alerts.
+                    </div>
 
-                ) : (
+                  ) : (
 
-                  alerts.map(alert => (
+                    alerts.map(alert => (
 
-                    <div
-                      key={alert._id}
-                      className="border border-red-700 rounded-lg p-4 mb-3 bg-red-950/20"
-                    >
+                      <div
+                        key={alert._id}
+                        className="border border-red-700 rounded-lg p-4 mb-3 bg-red-950/20"
+                      >
 
-                      <div className="flex justify-between">
+                        <div className="flex justify-between">
 
-                        <span className="font-bold text-red-400">
-                          {alert.severity}
-                        </span>
+                          <span className="font-bold text-red-400">
+                            {alert.severity}
+                          </span>
 
-                        <span className="text-xs text-gray-400">
-                          {alert.status}
-                        </span>
+                          <span className="text-xs text-gray-400">
+                            {alert.status}
+                          </span>
+
+                        </div>
+
+                        <h3 className="font-semibold text-white mt-2">
+                          {alert.signal_type}
+                        </h3>
+
+                        <p className="mt-2 text-gray-300">
+                          {alert.summary}
+                        </p>
+
+                        <p className="mt-2 text-sm text-blue-300">
+                          {alert.recommended_action}
+                        </p>
 
                       </div>
 
-                      <h3 className="font-semibold text-white mt-2">
-                        {alert.signal_type}
-                      </h3>
+                    ))
 
-                      <p className="mt-2 text-gray-300">
-                        {alert.summary}
-                      </p>
+                  )
+                }
 
-                      <p className="mt-2 text-sm text-blue-300">
-                        {alert.recommended_action}
-                      </p>
-
-                    </div>
-
-                  ))
-
-                )
-              }
-          
               </div>
 
             </div>
@@ -748,7 +906,7 @@ export default function ResidentPortal({ onLogout }) {
                 </tr>
                 <tr className="hover:bg-gray-800/50 transition">
                   <td className="px-4 py-3 text-gray-500">Today, 09:00:15</td>
-                  <td className="px-4 py-3"><span className="text-yellow-400 font-sans font-bold">Electrician (ABC)</span> <span className="text-[10px] text-yellow-500 ml-1 uppercase">Worker QR</span></td>
+                  <td className="px-4 py-3"><span className="text-yellow-400 font-sans font-bold">Maid</span> <span className="text-[10px] text-yellow-500 ml-1 uppercase">Worker QR</span></td>
                   <td className="px-4 py-3">Service Gate</td>
                   <td className="px-4 py-3"><span className="text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded border border-emerald-800/50">ACCESS_GRANTED (Scale Valid)</span></td>
                 </tr>

@@ -40,7 +40,7 @@ class DeliveryRequest(BaseModel):
 @router.post("/guest")
 def create_guest_pass(payload: GuestPassRequest):
 
-    resident =  db.residents.find_one({
+    resident = db.residents.find_one({
         "id": payload.resident_id
     })
 
@@ -50,7 +50,7 @@ def create_guest_pass(payload: GuestPassRequest):
             detail="Resident not found"
         )
 
-    guest_count =  db.guest_passes.count_documents({})
+    guest_count = db.guest_passes.count_documents({})
     guest_id = f"VIS-{guest_count + 101}"
 
     qr_data = {
@@ -80,9 +80,9 @@ def create_guest_pass(payload: GuestPassRequest):
 
 # ---------- Group Pass ----------
 @router.post("/group")
-async def create_group_pass(payload: GroupPassRequest):
+def create_group_pass(payload: GroupPassRequest):
 
-    resident = await db.residents.find_one({
+    resident = db.residents.find_one({
         "id": payload.resident_id
     })
 
@@ -92,7 +92,7 @@ async def create_group_pass(payload: GroupPassRequest):
             detail="Resident not found"
         )
 
-    group_count = await db.group_passes.count_documents({})
+    group_count = db.group_passes.count_documents({})
     group_id = f"GRP-{group_count + 101}"
 
     qr_data = {
@@ -113,7 +113,7 @@ async def create_group_pass(payload: GroupPassRequest):
         "qrData": qr_data
     }
 
-    await db.group_passes.insert_one(group_doc)
+    db.group_passes.insert_one(group_doc)
 
     return {
         "message": "Group pass created successfully",
@@ -125,9 +125,9 @@ async def create_group_pass(payload: GroupPassRequest):
 
 
 @router.post("/worker")
-async def create_worker_pass(payload: WorkerPassRequest):
+def create_worker_pass(payload: WorkerPassRequest):
 
-    resident = await db.residents.find_one({
+    resident = db.residents.find_one({
         "id": payload.resident_id
     })
 
@@ -137,7 +137,7 @@ async def create_worker_pass(payload: WorkerPassRequest):
             detail="Resident not found"
         )
 
-    worker_count = await db.worker_passes.count_documents({})
+    worker_count = db.worker_passes.count_documents({})
     worker_id = f"WRK-{worker_count + 101}"
 
     qr_data = {
@@ -156,7 +156,7 @@ async def create_worker_pass(payload: WorkerPassRequest):
         "qrData": qr_data
     }
 
-    await db.worker_passes.insert_one(worker_doc)
+    db.worker_passes.insert_one(worker_doc)
 
     return {
         "message": "Worker pass created successfully",
@@ -168,9 +168,9 @@ async def create_worker_pass(payload: WorkerPassRequest):
 
 
 @router.post("/delivery")
-async def create_delivery_notification(payload: DeliveryRequest):
+def create_delivery_notification(payload: DeliveryRequest):
 
-    resident = await db.residents.find_one({
+    resident = db.residents.find_one({
         "id": payload.resident_id
     })
 
@@ -188,7 +188,7 @@ async def create_delivery_notification(payload: DeliveryRequest):
             detail="Invalid arrival window"
         )
 
-    delivery_count = await db.delivery_notifications.count_documents({})
+    delivery_count = db.delivery_notifications.count_documents({})
     delivery_id = f"DLV-{delivery_count + 101}"
 
     delivery_doc = {
@@ -200,7 +200,7 @@ async def create_delivery_notification(payload: DeliveryRequest):
         "status": "active"
     }
 
-    await db.delivery_notifications.insert_one(delivery_doc)
+    db.delivery_notifications.insert_one(delivery_doc)
 
     return {
         "message": "Security notified successfully",
