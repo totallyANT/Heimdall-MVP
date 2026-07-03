@@ -23,22 +23,24 @@ known_face_names = []
 db_sync_lock = threading.Lock()
 
 # --- 2. MONGODB CONFIGURATION ---
-MONGO_URI = "mongodb+srv://poojithamalleswari_db_user:bwBTe9tkuhve4goF@cluster0.3zl7rtj.mongodb.net/"
+MONGO_URI = "mongodb+srv://dheerajh-reddy:ww6wrUHQbA4X80gS@cluster0.3pq8guh.mongodb.net/?appName=Cluster0"
 
 try:
-    print("Connecting to MongoDB Atlas 'admin_res' Cluster...")
+    print("Connecting to MongoDB Atlas 'heimdall' Cluster...")
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
     
-    db_admin_res = mongo_client["admin_res"]
-    db_heimdall = mongo_client["heimdall_security"]
+    # DB Route Update
+    db_main = mongo_client["heimdall"]
+    db_security = mongo_client["heimdall"]
     
-    # NEW: Added Guest and Entry Request collections to the watchdog
-    residents_collection = db_admin_res["residents"]
-    worker_passes_collection = db_admin_res["worker_passes"]
-    guest_passes_collection = db_admin_res["guest_passes"]
-    entry_requests_collection = db_admin_res["entry_requests"]
+    # Collections mapped to the new tree
+    residents_collection = db_main["residents"]
+    worker_passes_collection = db_main["worker_passes"]
+    guest_passes_collection = db_main["guest_passes"]
+    delivery_collection = db_main["delivery_notifications"]
     
-    incident_collection = db_heimdall["alert_actions"]
+    # Logs now strictly routed to a custom 'entry_logs' collection
+    incident_collection = db_security["entry_logs"]
     
     print("MongoDB Connected Successfully.")
 except Exception as e:
@@ -46,7 +48,7 @@ except Exception as e:
     residents_collection = None
     worker_passes_collection = None
     guest_passes_collection = None
-    entry_requests_collection = None
+    delivery_collection = None
     incident_collection = None
 
 def async_db_log(payload, is_tailgate=False):
@@ -70,31 +72,35 @@ def load_embeddings_from_db():
 
     temp_encodings = []
     temp_names = []
+    
+    # Universal query: Find any document where 'embedding' exists, is an array, and isn't empty
+    embedding_filter = {"embedding": {"$exists": True, "$type": "array", "$not": {"$size": 0}}}
 
     try:
         # 1. Load Residents
-        for res in residents_collection.find({"is_initialized": True, "embedding": {"$exists": True}}):
+        for res in residents_collection.find(embedding_filter):
             encoding = np.array(res["embedding"], dtype=np.float64)
             temp_encodings.append(encoding)
             temp_names.append(res.get("full_name", f"Resident_Flat_{res.get('flat_number')}"))
 
         # 2. Load Workers
-        for worker in worker_passes_collection.find({"worker_registration": "done", "embedding": {"$exists": True}}):
+        for worker in worker_passes_collection.find(embedding_filter):
             encoding = np.array(worker["embedding"], dtype=np.float64)
             temp_encodings.append(encoding)
             temp_names.append(f"{worker.get('worker_name')} (Flat {worker.get('resident_flat')})")
 
-        # 3. Load Approved Visitors (From QR Codes)
-        for guest in guest_passes_collection.find({"status": "used", "embedding": {"$exists": True}}):
+        # 3. Load Guests / Walk-in Visitors
+        for guest in guest_passes_collection.find(embedding_filter):
             encoding = np.array(guest["embedding"], dtype=np.float64)
             temp_encodings.append(encoding)
             temp_names.append(f"Guest: {guest.get('guest_name', 'Visitor')}")
-
-        # 4. Load Approved Ad-Hoc Visitors (From "Request Entry" button)
-        for req in entry_requests_collection.find({"status": "approved", "embedding": {"$exists": True}}):
-            encoding = np.array(req["embedding"], dtype=np.float64)
-            temp_encodings.append(encoding)
-            temp_names.append(f"Approved Visitor (Flat {req.get('flat')})")
+            
+        # 4. Load Vendors / Deliveries 
+        if delivery_collection is not None:
+            for vendor in delivery_collection.find(embedding_filter):
+                encoding = np.array(vendor["embedding"], dtype=np.float64)
+                temp_encodings.append(encoding)
+                temp_names.append(f"Vendor: {vendor.get('delivery_service', 'Delivery')}")
 
         with db_sync_lock:
             known_face_encodings = temp_encodings
@@ -216,26 +222,26 @@ def run_ai_engine():
             
             if raw_name == "Unknown Intruder": 
                 unknown_positions.append((center_x, center_y, target['body_box'], target['face_box']))
-            elif not raw_name.startswith("BLACKLIST_"):
+            else:
                 auth_positions.append((center_x, center_y, raw_name))
                 last_authorized_time, last_authorized_name = current_time, raw_name
             
             should_log = raw_name not in active_logs or (current_time - active_logs[raw_name]).total_seconds() > COOLDOWN_SECONDS
             if should_log and incident_collection is not None:
-                status = "CRITICAL_BLACKLIST_BREACH" if raw_name.startswith("BLACKLIST_") else ("CRITICAL_BREACH" if raw_name == "Unknown Intruder" else "AUTHORIZED_ACCESS")
-                inc_type = "BLACKLISTED_ENTRY" if raw_name.startswith("BLACKLIST_") else "STANDARD_ENTRY"
-                payload = {"timestamp": current_time, "incident_type": inc_type, "identity": raw_name.replace("BLACKLIST_", ""), "clearance_status": status, "bounding_boxes": {"body": target['body_box'], "face": target['face_box']}}
+                status = "CRITICAL_BREACH" if raw_name == "Unknown Intruder" else "AUTHORIZED_ACCESS"
+                inc_type = "STANDARD_ENTRY"
+                payload = {"timestamp": current_time, "incident_type": inc_type, "identity": raw_name, "clearance_status": status, "bounding_boxes": {"body": target['body_box'], "face": target['face_box']}}
                 threading.Thread(target=async_db_log, args=(payload, False)).start()
                 active_logs[raw_name] = current_time
 
-            color = (0, 0, 255) if "Unknown" in raw_name or "BLACKLIST" in raw_name else ((255, 165, 0) if "Analyzing" in raw_name else (0, 255, 0))
+            color = (0, 0, 255) if "Unknown" in raw_name else ((255, 165, 0) if "Analyzing" in raw_name else (0, 255, 0))
             cv2.rectangle(frame, (bx1, by1), (bx2, by2), color, 2)
-            cv2.putText(frame, raw_name.replace("BLACKLIST_", ""), (bx1, by1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            cv2.putText(frame, raw_name, (bx1, by1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             if target['face_box']:
                 fl, ft, fr, fb = target['face_box']
                 cv2.rectangle(frame, (fl, ft), (fr, fb), color, 2)
                 cv2.rectangle(frame, (fl, fb - 25), (fr, fb), color, cv2.FILLED)
-                cv2.putText(frame, raw_name.replace("BLACKLIST_", ""), (fl + 6, fb - 6), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(frame, raw_name, (fl + 6, fb - 6), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 1)
 
         if incident_collection is not None and (current_time - last_tailgate_log_time).total_seconds() > TAILGATE_COOLDOWN:
             tailgate_triggered = False

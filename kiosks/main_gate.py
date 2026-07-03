@@ -22,25 +22,25 @@ SCAN_MODE = "IDLE"
 QR_RESULT = None
 
 # --- 2. MONGODB CONFIGURATION ---
-MONGO_URI = "mongodb+srv://poojithamalleswari_db_user:bwBTe9tkuhve4goF@cluster0.3zl7rtj.mongodb.net/"
+MONGO_URI = "mongodb+srv://dheerajh-reddy:ww6wrUHQbA4X80gS@cluster0.3pq8guh.mongodb.net/?appName=Cluster0"
 
 try:
-    print("Connecting to MongoDB Atlas cluster...")
+    print("Connecting to MongoDB Atlas 'heimdall' Cluster...")
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
     
     # Primary Database Mapping based on Schema
-    db_admin_res = mongo_client["admin_res"]
-    db_heimdall = mongo_client["heimdall_security"]
+    db_main = mongo_client["heimdall"]
+    db_security = mongo_client["heimdall_security"]
     
-    # Collections
-    residents_collection = db_admin_res["residents"]
-    worker_passes_collection = db_admin_res["worker_passes"]
-    delivery_collection = db_admin_res["delivery_notifications"]
-    guest_passes_collection = db_admin_res["guest_passes"]
-    group_passes_collection = db_admin_res["group_passes"]
+    # Collections mapped to the new tree
+    residents_collection = db_main["residents"]
+    worker_passes_collection = db_main["worker_passes"]
+    delivery_collection = db_main["delivery_notifications"]
+    guest_passes_collection = db_main["guest_passes"]
+    group_passes_collection = db_main["group_passes"]
     
-    # Logs
-    incident_collection = db_heimdall["alert_actions"]
+    # Logs mapped to 'alerts'
+    incident_collection = db_security["alerts"]
     
     print("MongoDB Connected Successfully.")
 except Exception as e:
@@ -179,12 +179,9 @@ class MainGateApp(ctk.CTk):
         primary_frame = ctk.CTkFrame(self.menu_frame, fg_color="transparent")
         primary_frame.pack(pady=10)
         
-        # UI UPDATE: Adjusted widths to fit 3 buttons nicely in a single row
         ctk.CTkButton(primary_frame, text="Visitor", font=("Helvetica", 20, "bold"), height=80, width=250, command=lambda: self.show_screen(self.visitor_frame)).grid(row=0, column=0, padx=10)
         ctk.CTkButton(primary_frame, text="Delivery / Vendor", font=("Helvetica", 20, "bold"), height=80, width=250, command=lambda: self.show_screen(self.vendor_frame)).grid(row=0, column=1, padx=10)
-        
-        # NEW WORKER ENTRY BUTTON
-        ctk.CTkButton(primary_frame, text="Worker Entry", font=("Helvetica", 20, "bold"), height=80, width=250, command=self.start_qr_scan).grid(row=0, column=2, padx=10)
+        ctk.CTkButton(primary_frame, text="Worker Entry", font=("Helvetica", 20, "bold"), height=80, width=250, hover_color="#047857", command=self.start_qr_scan).grid(row=0, column=2, padx=10)
         
         ctk.CTkLabel(self.menu_frame, text="Administration & Setup", font=("Helvetica", 18, "bold"), text_color="#64748B").pack(pady=(60, 10))
         secondary_frame = ctk.CTkFrame(self.menu_frame, fg_color="transparent")
@@ -193,7 +190,7 @@ class MainGateApp(ctk.CTk):
         ctk.CTkButton(secondary_frame, text="Resident Registration", font=("Helvetica", 18), height=50, width=220, fg_color="#475569", hover_color="#334155", command=lambda: self.show_screen(self.resident_setup_frame)).grid(row=0, column=0, padx=15)
         ctk.CTkButton(secondary_frame, text="Worker / Help Setup", font=("Helvetica", 18), height=50, width=220, fg_color="#475569", hover_color="#334155", command=lambda: self.show_screen(self.visiting_help_frame)).grid(row=0, column=1, padx=15)
         ctk.CTkButton(self.menu_frame, text="Cancel", font=("Helvetica", 18), fg_color="#b30000", hover_color="#800000", height=50, width=200, command=self.return_to_home).pack(pady=50)
-
+    
     def build_resident_setup_screen(self):
         self.resident_setup_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         ctk.CTkLabel(self.resident_setup_frame, text="Resident Face Sync", font=("Helvetica", 28, "bold"), text_color="#0F172A").pack(pady=10)
@@ -205,10 +202,12 @@ class MainGateApp(ctk.CTk):
         self.res_flat_entry.pack(pady=5)
         self.res_name_entry = ctk.CTkEntry(self.resident_setup_frame, placeholder_text="Enter Full Name", font=("Helvetica", 16), width=250, height=40)
         self.res_name_entry.pack(pady=5)
-        self.res_auth_entry = ctk.CTkEntry(self.resident_setup_frame, placeholder_text="Enter Resident Badge ID", show="*", font=("Helvetica", 16), width=250, height=40)
+        
+        # UI UPDATE: Placeholder adjusted to ask for the new password schema requirement
+        self.res_auth_entry = ctk.CTkEntry(self.resident_setup_frame, placeholder_text="Enter Resident Password", show="*", font=("Helvetica", 16), width=250, height=40)
         self.res_auth_entry.pack(pady=5)
         
-        ctk.CTkButton(self.resident_setup_frame, text="Verify Badge & Sync Face", font=("Helvetica", 18), height=50, width=250, command=self.submit_resident_registration).pack(pady=10)
+        ctk.CTkButton(self.resident_setup_frame, text="Verify Auth & Sync Face", font=("Helvetica", 18), height=50, width=250, command=self.submit_resident_registration).pack(pady=10)
         ctk.CTkButton(self.resident_setup_frame, text="Back", font=("Helvetica", 16), fg_color="#b30000", hover_color="#800000", command=lambda: self.show_screen(self.menu_frame)).pack(pady=10)
 
     def build_visiting_help_screen(self):
@@ -315,7 +314,8 @@ class MainGateApp(ctk.CTk):
         encoding_list = face_encodings[0].tolist()
 
         resident = residents_collection.find_one({"flat_number": str(flat)})
-        resident_id = resident.get("resident_id") if resident else None
+        # DB UPDATE: Fetching 'id' instead of 'resident_id'
+        resident_id = resident.get("id") if resident else None
         
         today_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -327,7 +327,8 @@ class MainGateApp(ctk.CTk):
             "entry_date": today_str,
             "duration_days": 1,
             "status": "pending",
-            "embedding": encoding_list
+            "embedding": encoding_list,
+            "qrData": {"token": None, "issued_at": datetime.now().isoformat()}
         }
 
         try:
@@ -373,8 +374,9 @@ class MainGateApp(ctk.CTk):
         encoding_list = face_encodings[0].tolist()
 
         resident = residents_collection.find_one({"flat_number": str(flat)})
-        resident_id = resident.get("resident_id") if resident else None
-        
+        # DB UPDATE: Fetching 'id' instead of 'resident_id'
+        resident_id = resident.get("id") if resident else None
+
         delivery_payload = {
             "delivery_id": None,
             "resident_id": resident_id, 
@@ -429,7 +431,7 @@ class MainGateApp(ctk.CTk):
             if not req: continue
             
             if req["status"] == "active":
-                self.after(0, lambda: self.status_msg.configure(text=f"✅ ACCESS GRANTED by Resident!\nPass {req.get('passId', '')} Activated.", text_color="#10B981"))
+                self.after(0, lambda: self.status_msg.configure(text=f"✅ ACCESS GRANTED by Resident!\nPass Activated.", text_color="#10B981"))
                 self.after(5000, self.return_to_home)
                 return
             elif req["status"] == "denied":
@@ -464,9 +466,9 @@ class MainGateApp(ctk.CTk):
     def submit_resident_registration(self):
         flat = self.res_flat_entry.get()
         name = self.res_name_entry.get()
-        badge_code = self.res_auth_entry.get()
+        password_val = self.res_auth_entry.get()
 
-        if not flat or not name or not badge_code:
+        if not flat or not name or not password_val:
             self.status_msg.configure(text="Error: Please fill all fields.", text_color="#FF0000")
             self.show_screen(self.status_frame)
             self.after(3000, self.return_to_home)
@@ -477,14 +479,15 @@ class MainGateApp(ctk.CTk):
             self.show_screen(self.status_frame)
             return
 
+        # DB UPDATE: Queries the new 'password' field based on the schema
         valid_resident = residents_collection.find_one({
             "flat_number": flat, 
             "full_name": name, 
-            "badge": badge_code
+            "password": password_val 
         })
 
         if not valid_resident:
-            self.status_msg.configure(text="Error: Invalid Name, Flat, or Badge ID mismatch.", text_color="#FF0000")
+            self.status_msg.configure(text="Error: Invalid Name, Flat, or Password mismatch.", text_color="#FF0000")
             self.show_screen(self.status_frame)
             self.after(4000, self.return_to_home)
             return
@@ -578,8 +581,8 @@ class MainGateApp(ctk.CTk):
             QR_RESULT = None 
             today_str = datetime.now().strftime("%Y-%m-%d")
 
-            # 1. Check Worker Passes (NEW FEATURE)
-            worker_match = worker_passes_collection.find_one({"$or": [{"passId": scanned_token}, {"qrData": scanned_token}], "status": "active"})
+            # 1. Check Worker Passes (DB UPDATE: Querying 'worker_id' instead of 'passId')
+            worker_match = worker_passes_collection.find_one({"$or": [{"worker_id": scanned_token}, {"qrData": scanned_token}], "status": "active"})
             if worker_match:
                 self.status_msg.configure(text=f"✅ Welcome {worker_match.get('worker_name', 'Worker')}!\nWorker Pass Verified. ACCESS GRANTED.", text_color="#10B981")
                 threading.Thread(target=async_db_log, args=({"timestamp": datetime.now(), "incident_type": "WORKER_ENTRY", "identity": worker_match.get('worker_name', 'Worker'), "flat": worker_match.get('resident_flat', 'Unknown')},)).start()
