@@ -1,17 +1,24 @@
-import { useState } from 'react';
+import { useState,useEffect } from 'react';
 
 export default function AdminTower({ onLogout }) {
   const [lockdown, setLockdown] = useState(false);
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const user = JSON.parse(sessionStorage.getItem("user"));
+  const adminId = user?.admin?.id;
+  const [currentAdmin, setCurrentAdmin] = useState(null);
   const [provTab, setProvTab] = useState('resident'); 
   const [numResidents, setNumResidents] = useState(1);
   const [flatNum, setFlatNum] = useState('');
   const [badges, setBadges] = useState(['']);
   const [numSec, setNumSec] = useState(1);
+  const [directoryRoleFilter, setDirectoryRoleFilter] = useState("All");
   const [generatedCreds, setGeneratedCreds] = useState(null);
+  const [broadcastTitle, setBroadcastTitle] = useState(''); 
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcastSent, setBroadcastSent] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [pendingRequest, setPendingRequest] = useState(true);
   const [users, setUsers] = useState([
     { id: 'res_142', name: 'John Doe', role: 'Resident', score: 95, status: 'Active', color: 'text-emerald-400', roleColor: 'bg-gray-800' },
     { id: 'res_250', name: 'Bob Vance', role: 'Contractor', score: 70, status: 'Flagged', color: 'text-yellow-400', roleColor: 'bg-blue-900/30 text-blue-400 border border-blue-800/50' },
@@ -19,22 +26,67 @@ export default function AdminTower({ onLogout }) {
     { id: 'adm_441', name: 'Alice Smith', role: 'Admin', score: 99, status: 'Active', color: 'text-emerald-400', roleColor: 'bg-purple-900/30 text-purple-400 border border-purple-800/50' },
   ]);
 
-  const filteredUsers = users.filter(u => 
-    u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    u.id.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const loadDashboard = async () => {
 
-  const handleBlacklist = (approved) => {
-    if (approved) {
-      alert("Blacklist Approved. Bob Vance (res_250) credentials have been permanently revoked.");
-      setUsers(users.map(u => 
-        u.id === 'res_250' ? { ...u, score: 0, status: 'BLACKLISTED', color: 'text-red-500' } : u
-      ));
-    } else {
-      alert("Request Rejected. Informing Guard Unit Alpha.");
+    try {
+
+        const alertsResponse = await fetch(
+            "http://127.0.0.1:8000/alerts/admin"
+        );
+
+        const alertsData = await alertsResponse.json();
+
+        setAlerts(alertsData);
+
+        const profileResponse = await fetch(
+            `http://127.0.0.1:8000/profile/admin/${adminId}`
+        );
+
+        const admin = await profileResponse.json();
+
+        setCurrentAdmin({
+
+            name: admin.full_name,
+
+            badgeId: admin.id,
+
+            role: "System Administrator"
+
+        });
+
     }
-    setPendingRequest(false);
+
+    catch (err) {
+
+        console.error(err);
+
+        setError("Unable to load dashboard.");
+
+    }
+
+    finally {
+
+        setLoading(false);
+
+    }
+
   };
+  useEffect(() => {
+
+      loadDashboard();
+
+      const interval = setInterval(loadDashboard, 3000);
+
+      return () => clearInterval(interval);
+
+  }, []);
+
+  const filteredUsers = users.filter(u => {
+    const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.id.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesFilter = directoryRoleFilter === 'All' || u.role === directoryRoleFilter;
+    return matchesSearch && matchesFilter;
+  });
+
 
   const handleNumResidentsChange = (e) => {
     const num = parseInt(e.target.value) || 1;
@@ -50,38 +102,101 @@ export default function AdminTower({ onLogout }) {
     setBadges(newBadges);
   };
 
-  const handleProvision = (e) => {
+  const handleProvision = async (e) => {
     e.preventDefault();
-    const creds = [];
-    if (provTab === 'resident') {
-      for(let i = 0; i < numResidents; i++) {
-        creds.push({
-          role: 'Resident',
-          id: `res_${Math.floor(100 + Math.random() * 900)}`,
-          tempPwd: Math.random().toString(36).slice(-6).toUpperCase(),
-          flat: flatNum,
-          badge: badges[i] || 'PENDING'
+    setGeneratedCreds(null);
+
+    try {
+      let response;
+
+      if (provTab === "resident") {
+        response = await fetch(`${API}/resident/generate-identities`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            number_of_residents: numResidents,
+            flat_number: flatNum,
+            resident_badge_ids: badges,
+          }),
+        });
+      } else {
+        response = await fetch(`${API}/security/generate-security-guards`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            number_of_new_guards: numSec,
+          }),
         });
       }
-    } else {
-      for(let i = 0; i < numSec; i++) {
-        creds.push({
-          role: 'Security',
-          id: `sec_${Math.floor(100 + Math.random() * 900)}`,
-          tempPwd: Math.random().toString(36).slice(-6).toUpperCase(),
-          flat: 'N/A',
-          badge: 'N/A'
-        });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Provision failed");
       }
+
+      const creds = data.map((item) => ({
+        role: item.Resident || item.Security,
+        id: item.ID,
+        tempPwd: item.Password,
+        flat: item.Flat || "N/A",
+        badge: item.Badge || "N/A",
+      }));
+
+      setGeneratedCreds(creds);
+      fetchDirectory();
+
+    } catch (err) {
+      alert(err.message);
     }
-    setGeneratedCreds(creds);
   };
 
-  const handleBroadcast = (e) => {
+  const handleBroadcast = async (e) => {
     e.preventDefault();
     setBroadcastSent(true);
     setBroadcastMsg('');
     setTimeout(() => setBroadcastSent(false), 3000);
+  };
+
+  const handleAssignGuard = async (alertId) => {
+
+    try {
+
+        const response = await fetch(
+
+            `http://127.0.0.1:8000/alerts/${alertId}/assign/GRD-101`,
+
+            {
+
+                method: "POST"
+
+            }
+
+        );
+
+        if (!response.ok) {
+
+            throw new Error("Failed to assign guard");
+
+        }
+
+        // Refresh alerts after assignment
+        loadDashboard();
+
+    }
+
+    catch (err) {
+
+        console.error(err);
+
+        alert("Unable to assign guard.");
+
+    }
+
   };
 
   return (
@@ -91,119 +206,260 @@ export default function AdminTower({ onLogout }) {
           <span className="text-xl font-bold tracking-widest text-white">HEIMDALL</span>
           <span className="px-2 py-0.5 bg-purple-900/40 text-purple-400 border border-purple-800 rounded text-xs font-mono font-bold hidden sm:inline-block">ADMIN PORTAL</span>
         </div>
+        <div className="flex items-center space-x-3 bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-1.5 hidden sm:flex">
+
+          <div className="h-8 w-8 rounded-full bg-purple-900/40 border border-purple-800 flex items-center justify-center text-sm font-bold text-purple-400">
+              {currentAdmin?.name?.charAt(0) || "A"}
+          </div>
+
+          <div>
+              <p className="text-sm font-bold text-white">
+                  {currentAdmin?.name || "Loading..."}
+              </p>
+
+              <p className="text-xs text-gray-500">
+                  {currentAdmin?.badgeId}
+              </p>
+          </div>
+        </div>
         <button onClick={onLogout} className="text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 text-red-400 px-4 py-2 rounded-lg transition">Sign Out</button>
       </nav>
 
       <main className="p-6 max-w-7xl mx-auto space-y-6">
+        {/* Top Analytics Metrics Cards Row */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-gray-900 p-5 rounded-xl border border-gray-800">
-            <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">AI Detection Accuracy</span>
-            <div className="text-2xl font-bold text-emerald-400 mt-1">99.4%</div>
+
+        {/* High Alerts */}
+
+        <div className="bg-gray-900 p-5 rounded-xl border border-red-900">
+
+          <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+            High Alerts
+          </span>
+
+          <div className="text-3xl font-bold text-red-400 mt-2">
+            {alerts.filter(a => a.severity === "High" && !a.resolved).length}
           </div>
-          <div className="bg-gray-900 p-5 rounded-xl border border-gray-800">
-            <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">False Alerts</span>
-            <div className="text-2xl font-bold text-blue-400 mt-1">1.2%</div>
-          </div>
-          <div className="bg-gray-900 p-5 rounded-xl border border-gray-800">
-            <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Access Events Today</span>
-            <div className="text-2xl font-bold text-gray-200 mt-1 font-mono">1,402</div>
-          </div>
-          <div className="bg-gray-900 p-5 rounded-xl border border-gray-800">
-            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Gates Status</span>
-            <div className="text-2xl font-bold text-purple-300 mt-1">14 / 14 Online</div>
-          </div>
+
+          <p className="text-xs text-gray-500 mt-2">
+            Awaiting Admin Action
+          </p>
+
         </div>
+
+        {/* Open Incidents */}
+
+        <div className="bg-gray-900 p-5 rounded-xl border border-yellow-900">
+
+          <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+            Open Incidents
+          </span>
+
+          <div className="text-3xl font-bold text-yellow-400 mt-2">
+            {alerts.filter(a => !a.resolved).length}
+          </div>
+
+          <p className="text-xs text-gray-500 mt-2">
+            Across Entire Society
+          </p>
+
+        </div>
+
+        {/* Resolved */}
+
+        <div className="bg-gray-900 p-5 rounded-xl border border-green-900">
+
+          <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+            Resolved
+          </span>
+
+          <div className="text-3xl font-bold text-green-400 mt-2">
+            {alerts.filter(a => a.resolved).length}
+          </div>
+
+          <p className="text-xs text-gray-500 mt-2">
+            Successfully Closed
+          </p>
+
+        </div>
+
+        {/* Administrator */}
+
+        <div className="bg-gray-900 p-5 rounded-xl border border-purple-900">
+
+          <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+            Administrator
+          </span>
+
+          <div className="text-lg font-bold text-purple-400 mt-2">
+            {currentAdmin?.name || "Loading..."}
+          </div>
+
+          <p className="text-xs text-gray-500 mt-2">
+            {currentAdmin?.badgeId}
+          </p>
+
+        </div>
+
+      </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="space-y-6 flex flex-col">
             <div className="bg-gray-900 rounded-xl border border-gray-800 flex-1 flex flex-col">
               <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-950/30">
                 <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Pending Requests</h2>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${pendingRequest ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400'}`}>
-                  {pendingRequest ? '1 Pending' : '0 Pending'}
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-900 text-red-300">
+                    {alerts.filter(a=>a.severity==="High" && !a.resolved).length}
+                    High
                 </span>
               </div>
               
-              <div className="p-4 space-y-4">
-                {pendingRequest ? (
-                  <div className="bg-gray-950 border border-gray-800 rounded-lg p-4 animate-fadeIn">
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-[10px] text-gray-500">From: Unit Alpha</span>
-                    </div>
-                    <h3 className="text-sm font-bold text-white mb-1">Subject: Bob Vance (res_250)</h3>
-                    <p className="text-xs text-gray-400 mb-3">AI flagged 3rd tailgating violation. Guard intercepted and verified intentional breach. Requesting immediate credential revocation.</p>
-                    
-                    <div className="flex space-x-2 border-t border-gray-800 pt-3">
-                      <button onClick={() => handleBlacklist(true)} className="flex-1 bg-red-900/50 hover:bg-red-900 text-red-300 border border-red-800 py-1.5 rounded text-xs font-bold transition">Revoke Access</button>
-                      <button onClick={() => handleBlacklist(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 py-1.5 rounded text-xs transition">Reject</button>
-                    </div>
-                  </div>
-                  
-                ) : (
-                  <div className="text-center py-8 animate-fadeIn">
-                    <svg className="w-10 h-10 text-gray-700 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
-                    <p className="text-sm text-gray-500">All requests resolved.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+              <div className="p-4 space-y-4 overflow-y-auto">
 
-            <div className="bg-gray-900 rounded-xl p-6 border border-gray-800 shrink-0" style={{ boxShadow: '0 0 20px rgba(168, 85, 247, 0.15)' }}>
-              <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-2">Emergency Controls</h2>
-              <p className="text-[10px] text-gray-500 mb-4 uppercase tracking-widest">Bypasses Tier-1 & Tier-2</p>
-              <button onClick={() => setLockdown(!lockdown)} className={`w-full font-bold py-3 px-4 rounded-lg transition flex justify-center items-center space-x-2 ${lockdown ? 'bg-red-600 text-white shadow-lg' : 'bg-red-950 text-red-400 border border-red-800 hover:bg-red-900'}`}>
-                <span>{lockdown ? '⚠️ CANCEL LOCKDOWN & RESTORE' : '🚨 INITIATE CAMPUS LOCKDOWN'}</span>
-              </button>
+              {
+              loading ? (
+
+                <div className="flex justify-center items-center py-20">
+
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
+
+                </div>
+
+              ) : error ? (
+
+                  <div className="text-center py-10 text-red-400">
+
+                      {error}
+
+                  </div>
+
+              ) : alerts.filter(a => a.severity === "High").length === 0 ? (
+
+                  <div className="text-center py-10">
+
+                      <p className="text-emerald-400 font-semibold">
+
+                          No High Priority Alerts
+
+                      </p>
+
+                  </div>
+
+              ) : (
+
+                  alerts.filter(
+                          a => a.severity === "High" && !a.resolved
+                      )   
+                      .map(alert => (
+
+                          <div
+                              key={alert._id}
+                              className="bg-gray-950 border border-red-900 rounded-xl p-4"
+                          >
+
+                              <div className="flex justify-between">
+
+                                  <span className="text-red-400 font-bold">
+
+                                      HIGH
+
+                                  </span>
+
+                                  <span className="text-xs text-gray-500">
+
+                                      {alert.status}
+
+                                  </span>
+
+                              </div>
+
+                              <h3 className="text-lg font-bold text-white mt-3">
+
+                                  {alert.signal_type}
+
+                              </h3>
+
+                              <p className="text-gray-400 mt-2">
+
+                                  {alert.summary}
+
+                              </p>
+
+                              <p className="text-xs text-gray-500 mt-2">
+                                  Resident : {alert.resident_id}
+                              </p>
+
+                              <p className="text-xs text-gray-500">
+                                  Gate : {alert.gate_id}
+                              </p>
+
+                              <p className="text-xs text-gray-500">
+                                  {new Date(alert.created_at).toLocaleString()}
+                              </p>
+
+                              <div className="mt-3 bg-blue-950/20 border-l-4 border-blue-700 p-3 rounded">
+
+                                  <p className="text-blue-300 text-sm">
+
+                                      {alert.recommended_action}
+
+                                  </p>
+
+                              </div>
+
+                              <div className="flex justify-between mt-5">
+
+                                  <button
+
+                                      onClick={() => handleAssignGuard(alert._id)}
+
+                                      className="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg font-semibold"
+                                  >
+                                    Assign Guard
+                                  </button>
+
+                                  <button
+                                      className="bg-purple-700 hover:bg-purple-800 px-4 py-2 rounded-lg font-semibold"
+                                  >
+                                      Broadcast
+                                  </button>
+
+                              </div>
+
+                          </div>
+
+                      ))
+
+              )
+
+              }
+
+              </div>
             </div>
           </div>
 
+          {/* Alerts box panel component */}
           <div className="lg:col-span-2 bg-gray-900 rounded-xl border border-gray-800 flex flex-col h-full">
-            <div className="p-4 border-b border-gray-800 flex justify-between items-center flex-wrap gap-3">
-              <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Community Directory</h2>
-              <div className="relative">
-                <input 
-                  type="text" 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search ID or Name..." 
-                  className="pl-8 pr-3 py-1.5 bg-gray-950 border border-gray-700 rounded text-sm text-white focus:outline-none focus:border-purple-500 w-full sm:w-64 transition"
-                />
-                <svg className="w-4 h-4 text-gray-500 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-              </div>
+            <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+              <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">System Alerts Log</h2>
+              <span className="text-xs bg-green-800 text-gray-400 px-2 py-1 rounded border border-gray-700">Live</span>
             </div>
-            <div className="overflow-x-auto flex-1">
-              <table className="w-full text-left text-sm text-gray-300">
-                <thead className="text-xs text-gray-500 uppercase border-b border-gray-800 bg-gray-950/50">
-                  <tr><th className="py-3 px-4 font-medium">User Profile</th><th className="py-3 px-4 font-medium">Role</th><th className="py-3 px-4 font-medium">Score</th><th className="py-3 px-4 font-medium text-right">Action</th></tr>
-                </thead>
-                <tbody className="font-mono text-xs divide-y divide-gray-800">
-                  {filteredUsers.length > 0 ? filteredUsers.map((u) => (
-                    <tr key={u.id} className="hover:bg-gray-800/50 transition">
-                      <td className="px-6 py-4">
-                        <p className="text-white font-bold font-sans">{u.name}</p>
-                        <p className="text-gray-500">{u.id}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider ${u.roleColor}`}>{u.role}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`font-bold ${u.color}`}>{u.score === 0 ? '0 (BLACKLIST)' : u.score}</span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button className="text-purple-400 hover:text-purple-300 text-xs font-sans">Manage</button>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan="4" className="text-center py-8 text-gray-500 font-sans">No users found matching "{searchQuery}"</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            
+            <div className="p-4 space-y-3 overflow-y-auto h-[340px]" style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
+              {alerts.map((alertItem) => (
+                <div key={alertItem.id} className={`p-3 border-l-4 rounded-r-lg ${alertItem.color}`}>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold uppercase">{alertItem.severity} SEVERITY</span>
+                    <span className="text-[10px] text-gray-500">{alertItem.timestamp}</span>
+                  </div>
+                  <p className="text-sm mt-1">{alertItem.message}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
+        {/* Bottom Utility Grid Options */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800 shadow-lg flex flex-col min-h-[250px]">
             <div className="flex items-center space-x-2 mb-4">
@@ -213,20 +469,36 @@ export default function AdminTower({ onLogout }) {
             <p className="text-[10px] text-gray-500 mb-4 uppercase tracking-widest">Push notification to all residents</p>
             
             <form onSubmit={handleBroadcast} className="space-y-4 flex-1 flex flex-col">
-              <textarea 
-                required 
-                value={broadcastMsg}
-                onChange={(e) => setBroadcastMsg(e.target.value)}
-                placeholder="Enter emergency or system abnormality notification here..."
-                className="w-full flex-1 min-h-[120px] px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition mb-4 resize-none" 
-              />
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Broadcast Title</label>
+                <input 
+                  type="text" 
+                  required 
+                  value={broadcastTitle}
+                  onChange={(e) => setBroadcastTitle(e.target.value)} 
+                  placeholder="Ex: Emergency Broadcast" 
+                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition" 
+                />
+              </div>
+
+              <div className="flex-1 flex flex-col">
+                <label className="block text-xs font-medium text-gray-400 mb-1">Broadcast Message</label>
+                <textarea 
+                  required 
+                  value={broadcastMsg}
+                  onChange={(e) => setBroadcastMsg(e.target.value)}
+                  placeholder="Enter emergency or system abnormality notification here..."
+                  className="w-full flex-1 min-h-[120px] px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition mb-4 resize-none" 
+                />
+              </div>
+              
               {broadcastSent && <div className="text-green-400 text-xs text-center p-2 bg-green-900/30 border border-green-800 rounded mb-3">Broadcast successfully transmitted!</div>}
               <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-lg transition shadow-lg mt-auto">Transmit to All</button>
             </form>
           </div>
 
           <div className="lg:col-span-2 bg-gray-900 rounded-xl p-6 border border-gray-800 shadow-lg">
-            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Entity Provisioning Engine</h2>
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Entity Provisioning Engine</h2>
             
             <div className="flex border-b border-gray-800 mb-5">
               <button onClick={() => { setProvTab('resident'); setGeneratedCreds(null); }} className={`px-4 py-2 text-sm font-medium transition-colors ${provTab === 'resident' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-500 hover:text-gray-300'}`}>Add Residents</button>
@@ -295,6 +567,90 @@ export default function AdminTower({ onLogout }) {
             </div>
           </div>
         </div>
+
+        {/* Community Directory */}
+        <div className="bg-gray-900 rounded-xl border border-gray-800 flex flex-col mt-6">
+          <div className="p-4 border-b border-gray-800 flex justify-between items-center flex-wrap gap-3">
+            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Community Directory</h2>
+            
+            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+              <div className="flex space-x-1 p-0.5 bg-gray-950 rounded border border-gray-800">
+                {['All', 'Resident', 'Security'].map(filterRole => (
+                  <button
+                    key={filterRole}
+                    onClick={() => setDirectoryRoleFilter(filterRole)}
+                    className={`px-3 py-1 text-xs rounded font-medium transition-all ${directoryRoleFilter === filterRole ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                  >
+                    {filterRole === 'All' ? 'All' : filterRole === 'Resident' ? 'Residents' : 'Guards'}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative flex-1 sm:flex-initial">
+                <input 
+                  type="text" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search ID or Name..." 
+                  className="pl-8 pr-3 py-1.5 bg-gray-950 border border-gray-700 rounded text-sm text-white focus:outline-none focus:border-purple-500 w-full sm:w-64 transition"
+                />
+                <svg className="w-4 h-4 text-gray-500 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto overflow-y-auto max-h-[400px]" style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
+            <table className="w-full text-left text-sm text-gray-300 min-w-[600px]">
+              <thead className="text-xs text-gray-500 uppercase border-b border-gray-800 bg-gray-950/50 sticky top-0 z-10">
+                {/* 🛠️ Added "Status" to table head mapping structure */}
+                <tr>
+                  <th className="py-3 px-4 font-medium bg-gray-900">User Profile</th>
+                  <th className="py-3 px-4 font-medium bg-gray-900">Role</th>
+                  <th className="py-3 px-4 font-medium bg-gray-900">Status</th>
+                  <th className="py-3 px-4 font-medium bg-gray-900">Score</th>
+                  <th className="py-3 px-4 font-medium text-right bg-gray-900">Action</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono text-xs divide-y divide-gray-800">
+                {filteredUsers.length > 0 ? filteredUsers.map((u) => (
+                  <tr key={`${u.role}-${u.id}`} className="hover:bg-gray-800/50 transition">
+                    <td className="px-6 py-4">
+                      <p className="text-white font-bold font-sans">{u.name}</p>
+                      <p className="text-gray-500">{u.id}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider ${u.roleColor}`}>{u.role}</span>
+                    </td>
+                    {/* 🛠️ Dynamic account activation status indicator added below */}
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-sans font-medium uppercase ${u.isInitialized ? 'bg-emerald-950 text-emerald-400 border border-emerald-900/50' : 'bg-amber-950 text-yellow-500 border border-amber-900/50'}`}>
+                        {u.isInitialized ? 'Activated' : 'Pending Activation'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`font-bold ${u.color}`}>{u.score === 0 ? '0 (BLACKLIST)' : u.score}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end space-x-3">
+                        <button 
+                          onClick={() => handleRemoveUserDirect(u.id)}
+                          className="text-purple-400 hover:text-purple-300 text-xs font-sans"
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan="5" className="text-center py-8 text-gray-500 font-sans">No users found matching "{searchQuery}"</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </main>
     </div>
   );

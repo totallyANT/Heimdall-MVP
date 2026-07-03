@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException
 from database import db
 from pydantic import BaseModel, Field
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 router = APIRouter()
 
@@ -38,9 +40,9 @@ class DeliveryRequest(BaseModel):
 
 
 @router.post("/guest")
-async def create_guest_pass(payload: GuestPassRequest):
+def create_guest_pass(payload: GuestPassRequest):
 
-    resident = await db.residents.find_one({
+    resident =  db.residents.find_one({
         "id": payload.resident_id
     })
 
@@ -50,7 +52,7 @@ async def create_guest_pass(payload: GuestPassRequest):
             detail="Resident not found"
         )
 
-    guest_count = await db.guest_passes.count_documents({})
+    guest_count =  db.guest_passes.count_documents({})
     guest_id = f"VIS-{guest_count + 101}"
 
     qr_data = {
@@ -69,7 +71,7 @@ async def create_guest_pass(payload: GuestPassRequest):
         "qrData": qr_data
     }
 
-    await db.guest_passes.insert_one(guest_doc)
+    db.guest_passes.insert_one(guest_doc)
 
     return {
         "message": "Guest pass created successfully",
@@ -168,9 +170,9 @@ async def create_worker_pass(payload: WorkerPassRequest):
 
 
 @router.post("/delivery")
-async def create_delivery_notification(payload: DeliveryRequest):
+def create_delivery_notification(payload: DeliveryRequest):
 
-    resident = await db.residents.find_one({
+    resident = db.residents.find_one({
         "id": payload.resident_id
     })
 
@@ -188,8 +190,12 @@ async def create_delivery_notification(payload: DeliveryRequest):
             detail="Invalid arrival window"
         )
 
-    delivery_count = await db.delivery_notifications.count_documents({})
+    delivery_count = db.delivery_notifications.count_documents({})
     delivery_id = f"DLV-{delivery_count + 101}"
+
+    approved_time = datetime.now(
+    ZoneInfo("Asia/Kolkata")
+).strftime("%Y-%m-%d %H:%M:%S IST")
 
     delivery_doc = {
         "delivery_id": delivery_id,
@@ -197,10 +203,11 @@ async def create_delivery_notification(payload: DeliveryRequest):
         "resident_flat": resident["flat_number"],
         "delivery_service": payload.delivery_service or "Unknown",
         "arrival_window": payload.arrival_window,
+        "approved_time": approved_time,
         "status": "active"
     }
 
-    await db.delivery_notifications.insert_one(delivery_doc)
+    db.delivery_notifications.insert_one(delivery_doc)
 
     return {
         "message": "Security notified successfully",

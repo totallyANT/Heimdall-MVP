@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
+import { getResidentAlerts } from "../services/alerts";
 import ResidentBot from '../components/ResidentBot';
 
 export default function ResidentPortal({ onLogout }) {
   const [, setToast] = useState(false);
   const [guestSuccess, setGuestSuccess] = useState(false);
+  const [alerts, setAlerts] = useState([]);
   const [groupSuccess, setGroupSuccess] = useState(false);
   const [workerSuccess, setWorkerSuccess] = useState(false);
   const [deliverySuccess, setDeliverySuccess] = useState(false);
@@ -13,10 +15,18 @@ export default function ResidentPortal({ onLogout }) {
   const [profile, setProfile] = useState(null);
   const [vehicleInput, setVehicleInput] = useState("");
   const [qrPassId, setQrPassId] = useState(null);
+  const [qrUrl, setQrUrl] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
-  const user = JSON.parse(localStorage.getItem("user"));
+  const [announcements, setAnnouncements] = useState([]);
+  const [currentAnnouncement, setCurrentAnnouncement] = useState(0);
+  const user = JSON.parse(sessionStorage.getItem("user"));
   const residentId = user?.resident?.id;
   const today = new Date().toISOString().split("T")[0];
+  const [pendingPopup, setPendingPopup] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState({
+    pending_deliveries: [],
+    pending_visitors: []
+  });
 
   const triggerAlert = () => {
     setToast(true);
@@ -293,6 +303,90 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
+  const fetchPendingRequests = async () => {
+    const response = await fetch(
+      `http://127.0.0.1:8000/resident/pending-requests/${residentId}`
+    );
+
+    const data = await response.json();
+    console.log(data);
+
+    setPendingRequests(data);
+
+    if (
+      data.pending_deliveries.length > 0 ||
+      data.pending_visitors.length > 0
+    ) {
+      setPendingPopup(true);
+    } else {
+      setPendingPopup(false);   // IMPORTANT
+    }
+  };
+
+  const approveRequest = async (requestType, requestId) => {
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/resident/approve-request/${residentId}/${requestType}/${requestId}`,
+        {
+          method: "POST"
+        }
+      );
+
+      const data = await response.json();
+
+      alert(data.message);
+
+      if (requestType === "visitor") {
+        setQrPassId(data.passId);
+        setShowQrModal(true);
+      }
+
+      await fetchPendingRequests();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const rejectRequest = async (requestType, requestId) => {
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/resident/reject-request/${requestType}/${requestId}`,
+        {
+          method: "POST"
+        }
+      );
+
+      const data = await response.json();
+
+      alert(data.message);
+
+      await fetchPendingRequests();
+
+      if (
+        data.pending_deliveries.length > 0 ||
+        data.pending_visitors.length > 0
+      ) {
+        setPendingPopup(true);
+      } else {
+        setPendingPopup(false);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const nextAnnouncement = () => {
+    setCurrentAnnouncement((prev) =>
+      prev === announcements.length - 1 ? 0 : prev + 1
+    );
+  };
+
+  const prevAnnouncement = () => {
+    setCurrentAnnouncement((prev) =>
+      prev === 0 ? announcements.length - 1 : prev - 1
+    );
+  };
+
   const removeVehicle = async (vehicle) => {
     try {
       const response = await fetch(
@@ -323,6 +417,32 @@ export default function ResidentPortal({ onLogout }) {
   };
 
   useEffect(() => {
+    fetchPendingRequests();
+  }, []);
+
+  useEffect(() => {
+    const fetchAnnouncements = async () => {
+      try {
+        const response = await fetch(
+          "http://127.0.0.1:8000/resident/announcements"
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch announcements");
+        }
+
+        setAnnouncements(data.announcements || []);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    fetchAnnouncements();
+  }, []);
+
+  useEffect(() => {
     const fetchProfile = async () => {
       try {
         const response = await fetch(
@@ -347,6 +467,24 @@ export default function ResidentPortal({ onLogout }) {
     }
   }, [residentId]);
 
+  useEffect(() => {
+
+    if (!residentId) return;
+
+    const loadAlerts = async () => {
+
+      try {
+        const data = await getResidentAlerts(residentId);
+        setAlerts(data);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadAlerts();
+    const interval = setInterval(loadAlerts, 5000);
+    return () => clearInterval(interval);
+  }, [residentId]);
+
   return (
     <div className="bg-gray-950 min-h-screen font-sans text-gray-200 overflow-x-hidden w-full pb-10">
       <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex justify-between items-center sticky top-0 z-40">
@@ -362,6 +500,83 @@ export default function ResidentPortal({ onLogout }) {
           <button onClick={onLogout} className="text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 text-red-400 px-4 py-2 rounded-lg transition">Sign Out</button>
         </div>
       </nav>
+
+      {pendingPopup && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
+          <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-white">
+              Pending Approval Requests
+            </h2>
+
+            {/* Deliveries */}
+            {pendingRequests?.pending_deliveries?.map((delivery) => (
+              <div
+                key={delivery.request_id}
+                className="mb-4 p-4 border border-gray-700 rounded"
+              >
+                <p className="text-white">
+                  Delivery from <b>{delivery.delivery_service}</b>
+                </p>
+                <p className="text-gray-400 text-sm">
+                  Window: {delivery.arrival_window}
+                </p>
+
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() =>
+                      approveRequest("delivery", delivery.request_id)
+                    }
+                    className="bg-green-600 px-4 py-2 rounded"
+                  >
+                    Allow
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      rejectRequest("delivery", delivery.request_id)
+                    }
+                    className="bg-red-600 px-4 py-2 rounded"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {/* Visitors */}
+            {pendingRequests?.pending_visitors?.map((visitor) => (
+              <div
+                key={visitor.request_id}
+                className="mb-4 p-4 border border-gray-700 rounded"
+              >
+                <p className="text-white">
+                  Visitor <b>{visitor.guest_name}</b> is here for <b>{visitor.duration_days} days</b>
+                </p>
+
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() =>
+                      approveRequest("visitor", visitor.request_id)
+                    }
+                    className="bg-green-600 px-4 py-2 rounded"
+                  >
+                    Allow
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      rejectRequest("visitor", visitor.request_id)
+                    }
+                    className="bg-red-600 px-4 py-2 rounded"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showProfile && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4 animate-fadeIn">
@@ -443,10 +658,38 @@ export default function ResidentPortal({ onLogout }) {
       <main className="p-6 max-w-7xl mx-auto">
         <div className="bg-blue-900/30 border border-blue-800/60 text-blue-200 px-4 py-3 rounded-lg flex items-start sm:items-center space-x-3 mb-6 shadow-lg animate-fadeIn">
           <svg className="w-5 h-5 text-blue-400 shrink-0 mt-0.5 sm:mt-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-          <span className="text-sm font-medium">
-            <strong className="text-blue-300">System Announcement:</strong> Heimdall AI network maintenance scheduled for tonight at 02:00 AM. Expect brief portal interruptions.
-          </span>
+          {announcements.length === 0 ? (
+            <span className="text-sm font-medium text-gray-400">
+              No recent announcements
+            </span>
+          ) : (
+            <div className="flex items-center justify-between w-full gap-4">
+              <span className="text-sm font-medium flex-1">
+                <strong className="text-blue-300">
+                  {announcements[currentAnnouncement]?.title}:
+                </strong>{" "}
+                {announcements[currentAnnouncement]?.message}
+              </span>
+
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={prevAnnouncement}
+                  className="text-blue-400 hover:text-white text-xs px-2"
+                >
+                  ↑
+                </button>
+
+                <button
+                  onClick={nextAnnouncement}
+                  className="text-blue-400 hover:text-white text-xs px-2"
+                >
+                  ↓
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="space-y-6">
@@ -572,11 +815,55 @@ export default function ResidentPortal({ onLogout }) {
                 className="p-4 space-y-3 overflow-y-auto h-[500px]"
                 style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}
               >
-                <div className="bg-yellow-950/30 border-l-4 border-yellow-500 p-3 rounded-r-lg">
-                  <span className="text-xs font-bold text-yellow-400 uppercase">MEDIUM SEVERITY</span>
-                  <p className="text-sm text-gray-300 mt-1">Tailgating anomaly recorded during entry. Please ensure doors close securely.</p>
-                </div>
+                {
+                  alerts.length === 0 ? (
+
+                    <div className="text-green-400 text-sm">
+                      No active security alerts.
+                    </div>
+
+                  ) : (
+
+                    alerts.map(alert => (
+
+                      <div
+                        key={alert._id}
+                        className="border border-red-700 rounded-lg p-4 mb-3 bg-red-950/20"
+                      >
+
+                        <div className="flex justify-between">
+
+                          <span className="font-bold text-red-400">
+                            {alert.severity}
+                          </span>
+
+                          <span className="text-xs text-gray-400">
+                            {alert.status}
+                          </span>
+
+                        </div>
+
+                        <h3 className="font-semibold text-white mt-2">
+                          {alert.signal_type}
+                        </h3>
+
+                        <p className="mt-2 text-gray-300">
+                          {alert.summary}
+                        </p>
+
+                        <p className="mt-2 text-sm text-blue-300">
+                          {alert.recommended_action}
+                        </p>
+
+                      </div>
+
+                    ))
+
+                  )
+                }
+
               </div>
+
             </div>
 
             <button
@@ -587,61 +874,16 @@ export default function ResidentPortal({ onLogout }) {
             </button>
           </div>
         </div>
-
-        <div className="mt-6 bg-gray-900 rounded-xl p-6 border border-gray-800 shadow-lg overflow-hidden">
-          <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-3">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Recent Activity</h2>
-            <span className="text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded border border-gray-700">Last 7 Days</span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-gray-300 min-w-[600px]">
-              <thead className="text-xs text-gray-500 uppercase bg-gray-950/50 border-y border-gray-800">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Timestamp</th>
-                  <th className="px-4 py-3 font-medium">Entity / Guest Name</th>
-                  <th className="px-4 py-3 font-medium">Location</th>
-                  <th className="px-4 py-3 font-medium">Clearance Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800 font-mono text-xs">
-                <tr className="hover:bg-gray-800/50 transition">
-                  <td className="px-4 py-3 text-gray-500">Today, 14:32:01</td>
-                  <td className="px-4 py-3"><span className="text-white font-sans font-bold">John Doe</span> <span className="text-[10px] text-gray-500 ml-1 uppercase">Resident</span></td>
-                  <td className="px-4 py-3">North Gate</td>
-                  <td className="px-4 py-3"><span className="text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded border border-emerald-800/50">ACCESS_GRANTED</span></td>
-                </tr>
-                <tr className="hover:bg-gray-800/50 transition">
-                  <td className="px-4 py-3 text-gray-500">Today, 10:15:44</td>
-                  <td className="px-4 py-3"><span className="text-blue-400 font-sans font-bold">Jane Smith</span> <span className="text-[10px] text-blue-500 ml-1 uppercase">Guest QR</span></td>
-                  <td className="px-4 py-3">Lobby Turnstile</td>
-                  <td className="px-4 py-3"><span className="text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded border border-emerald-800/50">ACCESS_GRANTED</span></td>
-                </tr>
-                <tr className="hover:bg-gray-800/50 transition">
-                  <td className="px-4 py-3 text-gray-500">Today, 09:00:15</td>
-                  <td className="px-4 py-3"><span className="text-yellow-400 font-sans font-bold">Electrician (ABC)</span> <span className="text-[10px] text-yellow-500 ml-1 uppercase">Worker QR</span></td>
-                  <td className="px-4 py-3">Service Gate</td>
-                  <td className="px-4 py-3"><span className="text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded border border-emerald-800/50">ACCESS_GRANTED (Scale Valid)</span></td>
-                </tr>
-                <tr className="hover:bg-gray-800/50 transition">
-                  <td className="px-4 py-3 text-gray-500">Yesterday, 19:05:12</td>
-                  <td className="px-4 py-3"><span className="text-purple-400 font-sans font-bold">Birthday Party</span> <span className="text-[10px] text-purple-500 ml-1 uppercase">Group QR</span></td>
-                  <td className="px-4 py-3">South Gate</td>
-                  <td className="px-4 py-3"><span className="text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded border border-emerald-800/50">ACCESS_GRANTED (4/15)</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
       </main>
       <ResidentBot />
 
       {showQrModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 text-center relative">
+          <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 text-center relative w-[360px]">
+
             <button
               onClick={() => setShowQrModal(false)}
-              className="absolute top-3 right-3 text-gray-400 hover:text-white"
+              className="absolute top-3 right-3 text-gray-400 hover:text-white text-xl"
             >
               ✕
             </button>
@@ -650,23 +892,29 @@ export default function ResidentPortal({ onLogout }) {
               QR Pass Generated
             </h2>
 
-            <img
-              src={`http://127.0.0.1:8000/qr/${qrPassId}`}
-              alt="QR Code"
-              className="w-64 h-64 mx-auto rounded-lg bg-white p-2"
-            />
+            {qrPassId && (
+              <>
+                <img
+                  src={`http://127.0.0.1:8000/qr/${qrPassId}`}
+                  alt="QR Code"
+                  className="w-64 h-64 mx-auto rounded-lg bg-white p-2"
+                />
 
-            <p className="text-cyan-400 font-mono mt-4 text-lg">
-              {qrPassId.startsWith("VIS-")
-                ? `Guest ID: ${qrPassId}`
-                : qrPassId.startsWith("GRP-")
-                  ? `Group ID: ${qrPassId}`
-                  : `Worker ID: ${qrPassId}`}
-            </p>
+                <div className="mt-4 mb-4 bg-gray-950 border border-cyan-700 rounded-lg px-4 py-3">
+                  <p className="text-gray-400 text-xs uppercase mb-1">
+                    Pass ID
+                  </p>
+
+                  <p className="text-cyan-400 font-mono text-lg tracking-wider">
+                    {qrPassId}
+                  </p>
+                </div>
+              </>
+            )}
 
             <button
               onClick={downloadQr}
-              className="mt-4 bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg text-white font-semibold"
+              className="w-full bg-blue-600 hover:bg-blue-700 px-5 py-3 rounded-lg text-white font-semibold"
             >
               Download QR
             </button>

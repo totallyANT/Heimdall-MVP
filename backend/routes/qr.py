@@ -9,13 +9,13 @@ router = APIRouter()
 
 
 @router.get("/{pass_id}")
-async def get_qr(pass_id: str):
+def get_qr(pass_id: str):
 
     qr_data = None
 
     # ---------- Guest Pass ----------
     if pass_id.startswith("VIS-"):
-        guest = await db.guest_passes.find_one({
+        guest =  db.guest_passes.find_one({
             "passId": pass_id
         })
 
@@ -32,7 +32,7 @@ async def get_qr(pass_id: str):
 
     # ---------- Group Pass ----------
     elif pass_id.startswith("GRP-"):
-        group = await db.group_passes.find_one({
+        group =  db.group_passes.find_one({
             "passId": pass_id
         })
 
@@ -49,7 +49,7 @@ async def get_qr(pass_id: str):
 
     # ---------- Worker Pass ----------
     elif pass_id.startswith("WRK-"):
-        worker = await db.worker_passes.find_one({
+        worker = db.worker_passes.find_one({
             "worker_id": pass_id
         })
 

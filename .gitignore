@@ -1,16 +1,17 @@
-# Environments
+# Python
+__pycache__/
+*.py[cod]
+env/
+.venv/
 venv/
+
+# Node
+frontend/node_modules/
+
+# Environment variables
 .env
 
-# PyInstaller / Build outputs
-build/
-dist/
-*.spec
+# VS Code
+.vscode/
 
-# Python cache
-**/__pycache__/
-*.pyc
-
-# OS generated files
-.DS_Store
-Thumbs.db
+chroma_db/

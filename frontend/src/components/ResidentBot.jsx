@@ -2,14 +2,20 @@ import { useState, useRef, useEffect } from 'react';
 
 export default function ResidentBot() {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    { id: 1, sender: 'bot', text: 'Welcome to Heimdall Assistance. How can I help you navigate the estate or amenities today?' }
-  ]);
+  
+  const [messages, setMessages] = useState(() => {
+    const savedChat = sessionStorage.getItem('heimdall_chat_history');
+    return savedChat ? JSON.parse(savedChat) : [
+      { id: 1, sender: 'bot', text: 'Welcome to Heimdall Assistance. How can I help you navigate the estate or amenities today?' }
+    ];
+  });
+  
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
+    sessionStorage.setItem('heimdall_chat_history', JSON.stringify(messages));
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 

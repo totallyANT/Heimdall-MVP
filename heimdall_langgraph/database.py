@@ -20,10 +20,17 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CSV_PATH = os.path.join(_HERE, "..", "heimdall_security_residents_actual.csv")
 
 # ── connection ────────────────────────────────────────────────────────────────
-def get_db(db_name: str = "heimdall_security"):
+def get_db():
     uri = os.getenv("MONGO_URI")
+
     if not uri:
         raise EnvironmentError("❌ MONGO_URI not set.")
+
+    db_name = os.getenv("DB_NAME")
+
+    if not db_name:
+        raise EnvironmentError("❌ DB_NAME not set.")
+
     return MongoClient(uri)[db_name]
 
 
@@ -185,3 +192,46 @@ def get_cross_incident_correlation(incident_timestamp: str, window_minutes: int 
         "correlated_tailgating":   _fetch("Tailgating_incidents"),
         "correlated_forced_open":  _fetch("Door_Forced_Open_Incidents"),
     }
+
+
+# ==========================================================
+# ALERTS
+# ==========================================================
+
+def save_alert(alert: dict):
+
+    result = get_db()["alerts"].insert_one(alert)
+
+    return str(result.inserted_id)
+
+
+def get_alert(alert_id):
+
+    return get_db()["alerts"].find_one(
+
+        {
+
+            "alert_id": alert_id
+
+        }
+
+    )
+
+
+def update_alert(alert_id, updates: dict):
+
+    get_db()["alerts"].update_one(
+
+        {
+
+            "alert_id": alert_id
+
+        },
+
+        {
+
+            "$set": updates
+
+        }
+
+    )

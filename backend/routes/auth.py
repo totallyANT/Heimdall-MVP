@@ -24,7 +24,7 @@ async def initialize_resident(resident: ResidentInitialize):
 
     # 2. Find resident using:
     # id + flat_number + temp password
-    existing_resident = await db.residents.find_one({
+    existing_resident =  db.residents.find_one({
         "id": resident.id,
         "flat_number": resident.flat_number,
         "password": resident.temp_passcode
@@ -50,7 +50,7 @@ async def initialize_resident(resident: ResidentInitialize):
     ).decode("utf-8")
 
     # 5. Update resident document
-    await db.residents.update_one(
+    db.residents.update_one(
         {"id": resident.id},
         {
             "$set": {
@@ -69,9 +69,9 @@ async def initialize_resident(resident: ResidentInitialize):
 
 
 @router.post("/login")
-async def login_resident(credentials: ResidentLogin):
+def login_resident(credentials: ResidentLogin):
 
-    resident = await db.residents.find_one({
+    resident = db.residents.find_one({
         "id": credentials.id
     })
 
@@ -109,7 +109,7 @@ async def login_resident(credentials: ResidentLogin):
 
 
 @router.post("/security/initialize")
-async def initialize_security(guard: SecurityInitialize):
+def initialize_security(guard: SecurityInitialize):
 
     if guard.password != guard.confirm_password:
         raise HTTPException(
@@ -117,7 +117,7 @@ async def initialize_security(guard: SecurityInitialize):
             detail="Passwords do not match"
         )
 
-    existing_guard = await db.security_guards.find_one({
+    existing_guard =  db.security_guards.find_one({
         "id": guard.id,
         "password": guard.temp_passcode
     })
@@ -139,7 +139,7 @@ async def initialize_security(guard: SecurityInitialize):
         bcrypt.gensalt()
     ).decode("utf-8")
 
-    await db.security_guards.update_one(
+    db.security_guards.update_one(
         {"id": guard.id},
         {
             "$set": {
@@ -158,9 +158,9 @@ async def initialize_security(guard: SecurityInitialize):
 
 
 @router.post("/security/login")
-async def login_security(credentials: SecurityLogin):
+def login_security(credentials: SecurityLogin):
 
-    guard = await db.security_guards.find_one({
+    guard =  db.security_guards.find_one({
         "id": credentials.id
     })
 
@@ -197,9 +197,9 @@ async def login_security(credentials: SecurityLogin):
 
 
 @router.post("/admin/login")
-async def login_admin(credentials: AdminLogin):
+def login_admin(credentials: AdminLogin):
 
-    admin = await db.admins.find_one({
+    admin = db.admins.find_one({
         "id": credentials.id
     })
 
