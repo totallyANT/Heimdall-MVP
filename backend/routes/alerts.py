@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 import database
 
@@ -7,6 +8,8 @@ router = APIRouter(
     tags=["Alerts"]
 )
 
+class AlertFeedback(BaseModel):
+    feedback: str
 
 @router.get("/admin")
 def admin_alerts():
@@ -30,27 +33,34 @@ def resident_alerts(resident_id: str):
     return database.get_resident_alerts(resident_id)
 
 
-@router.post("/{alert_id}/verify")
-def verify_alert(alert_id: str):
+@router.post("/{alert_id}/dismiss")
+def dismiss_alert(
+    alert_id: str,
+    data: AlertFeedback
+):
 
-    database.verify_alert(alert_id)
+    database.dismiss_alert(
+        alert_id,
+        data.feedback
+    )
 
     return {
-
-        "message": "Alert verified"
-
+        "message": "Alert dismissed successfully"
     }
 
-
 @router.post("/{alert_id}/resolve")
-def resolve_alert(alert_id: str):
+def resolve_alert(
+    alert_id: str,
+    data: AlertFeedback
+):
 
-    database.resolve_alert(alert_id)
+    database.resolve_alert(
+        alert_id,
+        data.feedback
+    )
 
     return {
-
-        "message": "Alert resolved"
-
+        "message": "Alert resolved successfully"
     }
 
 

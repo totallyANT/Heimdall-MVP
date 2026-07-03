@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 from dotenv import load_dotenv
@@ -13,6 +14,11 @@ DB_NAME = os.getenv("DB_NAME")
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 security_db = client[DB_NAME]
+
+def ist_now():
+    return datetime.now(
+        ZoneInfo("Asia/Kolkata")
+    ).strftime("%Y-%m-%d %H:%M:%S IST")
 
 
 # ==========================================================
@@ -123,11 +129,6 @@ def get_resident_alerts(resident_id):
 
         alert["_id"] = str(alert["_id"])
 
-        if isinstance(alert.get("created_at"), datetime):
-            alert["created_at"] = alert["created_at"].isoformat()
-
-        if isinstance(alert.get("updated_at"), datetime):
-            alert["updated_at"] = alert["updated_at"].isoformat()
 
     return alerts
 
@@ -155,7 +156,7 @@ def assign_guard(alert_id, guard_id):
 
                 "status": "INVESTIGATING",
 
-                "updated_at": datetime.utcnow()
+                "updated_at": ist_now()
 
             }
 
@@ -171,8 +172,7 @@ def assign_guard(alert_id, guard_id):
     )
 
 
-
-def verify_alert(alert_id):
+def dismiss_alert(alert_id, feedback):
 
     db.alerts.update_one(
 
@@ -183,11 +183,15 @@ def verify_alert(alert_id):
         {
             "$set": {
 
-                "verified": True,
+                "dismissed": True,
 
-                "status": "VERIFIED",
+                "resolved": False,
 
-                "updated_at": datetime.utcnow()
+                "status": "DISMISSED",
+
+                "feedback": feedback,
+
+                "updated_at": ist_now()
 
             }
 
@@ -196,7 +200,7 @@ def verify_alert(alert_id):
     )
 
 
-def resolve_alert(alert_id):
+def resolve_alert(alert_id, feedback):
 
     db.alerts.update_one(
 
@@ -209,9 +213,13 @@ def resolve_alert(alert_id):
 
                 "resolved": True,
 
+                "dismissed": False,
+
                 "status": "RESOLVED",
 
-                "updated_at": datetime.utcnow()
+                "feedback": feedback,
+
+                "updated_at": ist_now()
 
             }
 

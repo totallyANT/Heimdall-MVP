@@ -3,8 +3,6 @@ import { useState, useEffect } from 'react';
 export default function GuardDashboard({ onLogout }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [flatNumber, setFlatNumber] = useState("");
-  const [intercomState, setIntercomState] = useState("idle");
   const [error, setError] = useState("");
 
   const user = JSON.parse(sessionStorage.getItem("user"));
@@ -12,186 +10,204 @@ export default function GuardDashboard({ onLogout }) {
   const guardId = user?.guard?.id;
 
   // Active Security Guard Profile State
-  const [currentGuard, setCurrentGuard] = useState(null);
+  const [currentGuard,setCurrentGuard]=useState(null);
 
   // Delivery Pre-Approval State
-  const [preApprovals, setPreApprovals] = useState([
-    { id: 1, resident: "John Doe (A-402)", courier: "Amazon", window: "2–4 PM", status: "pending" },
-    { id: 2, resident: "Sarah Jenkins (B-105)", courier: "FedEx", window: "Morning (8 AM - 12 PM)", status: "pending" }
-  ]);
+  const [preApprovals, setPreApprovals] = useState([]);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackType, setFeedbackType] = useState("");
+  const [selectedAlert, setSelectedAlert] = useState(null);
+  const [feedback, setFeedback] = useState("");
+// --------------------------------------------
+// Load Deliveries
+// --------------------------------------------
+const loadDeliveries = async () => {
+    try {
+        const response = await fetch(
+            "http://127.0.0.1:8000/delivery/pending"
+        );
 
+        const data = await response.json();
 
+        setPreApprovals(data);
 
-  useEffect(() => {
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+// --------------------------------------------
+// useEffect
+// --------------------------------------------
+useEffect(() => {
 
     const loadAlerts = async () => {
 
-      try {
+        try {
 
-        // Guard Profile
-        const profileResponse = await fetch(
-          `http://127.0.0.1:8000/profile/guard/${guardId}`
+            // Guard Profile
+            const profileResponse = await fetch(
+                `http://127.0.0.1:8000/profile/guard/${guardId}`
+            );
+
+            const guard = await profileResponse.json();
+
+            setCurrentGuard({
+                name: guard.full_name,
+                badgeId: guard.id,
+                station: guard.station || "Main Security"
+            });
+
+            // Guard Alerts
+            const alertsResponse = await fetch(
+                `http://127.0.0.1:8000/alerts/guard/${guardId}`
+            );
+
+            const data = await alertsResponse.json();
+
+            setAlerts(data);
+
+        } catch (err) {
+
+            console.error(err);
+            setError("Unable to load alerts.");
+
+        } finally {
+
+            setLoading(false);
+
+        }
+    };
+
+    // Initial Load
+    loadAlerts();
+    loadDeliveries();
+
+    // Auto Refresh
+    const interval = setInterval(() => {
+
+        loadAlerts();
+        loadDeliveries();
+
+    }, 3000);
+
+    return () => clearInterval(interval);
+
+}, [guardId]);
+
+
+// --------------------------------------------
+// Allow Entry
+// --------------------------------------------
+const handleAllowEntry = async (deliveryId) => {
+
+    try {
+
+        const response = await fetch(
+            "http://127.0.0.1:8000/delivery/allow-entry",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    delivery_id: deliveryId
+                })
+            }
         );
 
-        const guard = await profileResponse.json();
+        const data = await response.json();
 
-        setCurrentGuard({
+        console.log("Allow Entry:", data);
 
-          name: guard.full_name,
+        await loadDeliveries();
 
-          badgeId: guard.id,
-
-          station: guard.station || "Main Security"
-
-        });
-
-        // Guard Alerts
-        const alertsResponse = await fetch(
-          `http://127.0.0.1:8000/alerts/guard/${guardId}`
-        );
-
-        const data = await alertsResponse.json();
-
-        setAlerts(data);
-
-      }
-
-      catch (err) {
+    } catch (err) {
 
         console.error(err);
 
-        setError("Unable to load alerts.");
-
-      }
-
-      finally {
-
-        setLoading(false);
-
-      }
-
-    };
-    loadAlerts();
-    const interval = setInterval(loadAlerts, 3000);
-    return () => clearInterval(interval);
-  }, [guardId]);
+    }
+};
 
 
-  const handleCall = async (e) => {
-    console.log("handleCall fired");
-    e.preventDefault();
-
-    if (!flatNumber) return;
+// --------------------------------------------
+// Exit Delivery
+// --------------------------------------------
+const handleExit = async (deliveryId) => {
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/intercom/call", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          flatNo: flatNumber,
-          requestedBy: currentGuard.guardId,
-        }),
-      });
-      console.log("Response received:", response);
 
-      const result = await response.json();
-      console.log("Backend Response:", result);
-      console.log("Reached after backend");
+        const response = await fetch(
+            "http://127.0.0.1:8000/delivery/exit",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    delivery_id: deliveryId
+                })
+            }
+        );
 
-      const currentCallId = result.call_id;
-      setCallId(result.call_id);
+        const data = await response.json();
 
-      console.log("Call created:", result);
-      console.log("Changing state to calling");
+        console.log("Exit:", data);
 
-      setIntercomState("calling");
-      setCallDuration(0);
+        await loadDeliveries();
 
-      setTimeout(async () => {
+    } catch (err) {
 
-        await fetch("http://127.0.0.1:8000/intercom/connect", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            flatNo: flatNumber,
-            requestedBy: currentGuard.guardId,
-            call_id: currentCallId,
-          }),
-        });
+        console.error(err);
 
-        setIntercomState("connected");
-
-      }, 3000);
-
-    } catch (error) {
-      console.error(error);
     }
-  };
+};
 
-  const endCall = async () => {
-    try {
-      const response = await fetch("http://127.0.0.1:8000/intercom/end-call", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          flatNo: flatNumber,
-          requestedBy: currentGuard.guardId,
-          call_id: callId,
-        }),
-      });
-
-      const result = await response.json();
-
-      console.log("Call ended:", result);
-
-      setIntercomState("idle");
-      setCallDuration(0);
-      setFlatNumber("");
-
-    } catch (error) {
-      console.error("Failed to end call:", error);
-    }
-  };
-
-  const handleAllowEntry = (id) => {
-    setPreApprovals(prev =>
-      prev.map(item => item.id === id ? { ...item, status: "verified" } : item)
-    );
-  };
-
-  const verifyAlert = async (id) => {
+    const resolveAlert = async () => {
 
     await fetch(
-      `http://127.0.0.1:8000/alerts/${id}/verify`,
-      {
-        method: "POST"
-      }
+        `http://127.0.0.1:8000/alerts/${selectedAlert}/resolve`,
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                feedback
+            })
+        }
     );
+
     setAlerts(prev =>
-      prev.map(a =>
-        a._id === id
-          ? { ...a, verified: true }
-          : a
-      )
+        prev.filter(a => a._id !== selectedAlert)
     );
-  };
 
-  const resolveAlert = async (id) => {
+    setShowFeedbackModal(false);
+    setFeedback("");
+};
+
+const dismissAlert = async () => {
+
     await fetch(
-      `http://127.0.0.1:8000/alerts/${id}/resolve`,
-      {
-        method: "POST"
-      }
+        `http://127.0.0.1:8000/alerts/${selectedAlert}/dismiss`,
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                feedback
+            })
+        }
     );
-    setAlerts(prev => prev.filter(a => a._id !== id));
-  };
 
+    setAlerts(prev =>
+        prev.filter(a => a._id !== selectedAlert)
+    );
+
+    setShowFeedbackModal(false);
+    setFeedback("");
+};
   return (
     <div className="bg-gray-950 min-h-screen font-sans text-gray-200 h-screen overflow-hidden flex flex-col w-full">
       <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex justify-between items-center shrink-0">
@@ -200,7 +216,7 @@ export default function GuardDashboard({ onLogout }) {
           <span className="px-2 py-0.5 bg-emerald-900/40 text-emerald-400 border border-emerald-800 rounded text-xs font-mono font-bold">GUARD PORTAL</span>
         </div>
         <div className="flex items-center space-x-6">
-
+          
           {/* 🛠️ Active Security Profile Identifier */}
           <div className="flex items-center space-x-3 bg-gray-950/60 border border-gray-800 rounded-lg px-3 py-1.5 hidden sm:flex">
             <div className="h-7 w-7 rounded-full bg-blue-900/40 border border-blue-800 flex items-center justify-center text-xs font-bold text-blue-400 font-mono">
@@ -222,196 +238,142 @@ export default function GuardDashboard({ onLogout }) {
         </div>
       </nav>
 
-      <main className="p-6 flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
+      <main className="p-6 flex-1 overflow-hidden">
         <div className="lg:col-span-2 space-y-6 flex flex-col h-full overflow-y-auto pr-2">
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 shadow-2xl shrink-0">
-            {
-              error ? (
+           {
+            error ? (
 
                 <div className="text-center py-20">
 
-                  <h2 className="text-red-400 text-xl font-bold">
+                    <h2 className="text-red-400 text-xl font-bold">
 
-                    {error}
+                        {error}
 
-                  </h2>
+                    </h2>
 
                 </div>
 
-              ) : loading ? (
+            ) : loading ? (
 
                 <div className="flex justify-center items-center py-20">
 
-                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
 
                 </div>
 
-              ) : alerts.length === 0 ? (
+            ) : alerts.length === 0 ? (
 
                 <div className="py-20 text-center">
 
-                  <svg
-                    className="w-16 h-16 text-emerald-600 mx-auto mb-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
+                    <svg
+                        className="w-16 h-16 text-emerald-600 mx-auto mb-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                    </svg>
 
-                  <h2 className="text-xl font-bold text-emerald-400">
+                    <h2 className="text-xl font-bold text-emerald-400">
 
-                    No Active Investigations
+                        No Active Investigations
 
-                  </h2>
-
-                  <p className="text-gray-500 mt-2">
-
-                    Guard queue is currently empty.
-
-                  </p>
-
-                </div>
-
-              ) : (
-
-                alerts.map(alert => (
-                  <div
-                    key={alert._id}
-                    className="border border-gray-800 rounded-xl p-6 mb-5 bg-gray-950"
-                  >
-                    <div className="flex justify-between items-center">
-                      <span
-                        className={`px-3 py-1 rounded text-xs font-bold
-                                ${alert.severity === "High"
-                            ? "bg-red-900 text-red-300"
-                            : alert.severity === "Medium"
-                              ? "bg-yellow-900 text-yellow-300"
-                              : "bg-green-900 text-green-300"
-                          }
-                                `}
-                      >
-                        {alert.severity}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {alert.status}
-                      </span>
-                    </div>
-
-                    <h2 className="text-xl font-bold text-white mt-4">
-                      {alert.signal_type}
                     </h2>
 
-                    <p className="text-gray-300 mt-3">
-                      {alert.summary}
+                    <p className="text-gray-500 mt-2">
+
+                        Guard queue is currently empty.
+
                     </p>
 
-                    <p className="text-xs text-gray-500 mt-2">
-                      {new Date(alert.created_at).toLocaleString()}
-                    </p>
-
-                    <div className="mt-4 bg-blue-950/30 border-l-4 border-blue-600 p-3 rounded">
-                      <p className="text-blue-300 text-sm">
-                        {alert.recommended_action}
-                      </p>
-                    </div>
-
-                    <div className="mt-3 flex gap-2">
-
-                      {
-                        alert.verified
-                        &&
-                        <span className="bg-blue-900 text-blue-300 px-2 py-1 rounded text-xs">
-                          VERIFIED
-                        </span>
-                      }
-                      {
-                        alert.resolved
-                        &&
-                        <span className="bg-green-900 text-green-300 px-2 py-1 rounded text-xs">
-                          RESOLVED
-                        </span>
-                      }
-                    </div>
-                    <div className="flex gap-3 mt-5">
-                      <button
-                        disabled={alert.verified}
-                        onClick={() => verifyAlert(alert._id)}
-                        className={`px-5 py-2 rounded-lg font-semibold
-                                ${alert.verified
-                            ? "bg-gray-700 cursor-not-allowed"
-                            : "bg-yellow-600 hover:bg-yellow-700"
-                          }
-                              `}
-                      >
-                        Verify
-                      </button>
-
-                      <button
-                        disabled={alert.resolved}
-                        onClick={() => resolveAlert(alert._id)}
-                        className="bg-green-600 hover:bg-green-700 px-5 py-2 rounded-lg font-semibold"
-                      >
-                        Resolve
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )
-            }
-          </div>
-
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 shadow-lg shrink-0">
-            <div className="flex items-center space-x-2 mb-4">
-              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
-              <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Resident Intercom</h2>
-            </div>
-
-            <form onSubmit={handleCall} className="flex gap-3">
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  value={flatNumber}
-                  onChange={(e) => setFlatNumber(e.target.value)}
-                  disabled={intercomState !== 'idle'}
-                  required
-                  placeholder="Enter Flat (e.g., A-402)"
-                  className="w-full px-4 py-2.5 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 transition disabled:opacity-50"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={intercomState !== 'idle'}
-                className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-2.5 rounded-lg border border-gray-700 font-bold transition flex items-center space-x-2 disabled:opacity-50"
-              >
-                <span>Call</span>
-              </button>
-            </form>
-
-            {intercomState !== 'idle' && (
-              <div className={`mt-3 p-3 border rounded-lg flex items-center justify-between ${intercomState === 'calling' ? 'bg-blue-900/20 border-blue-800/50' : 'bg-emerald-900/20 border-emerald-800/50'}`}>
-                <div className="flex items-center space-x-3">
-                  <span className="flex h-3 w-3 relative">
-                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${intercomState === 'calling' ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
-                    <span className={`relative inline-flex rounded-full h-3 w-3 ${intercomState === 'calling' ? 'bg-blue-500' : 'bg-emerald-500'}`}></span>
-                  </span>
-                  <span className={`text-sm font-mono ${intercomState === 'calling' ? 'text-blue-400' : 'text-emerald-400'}`}>
-                    {intercomState === 'calling'
-                      ? `Dialing Flat ${flatNumber.toUpperCase()}...`
-                      : `Connected to ${flatNumber.toUpperCase()} (${String(
-                        Math.floor(callDuration / 60)
-                      ).padStart(2, "0")}:${String(callDuration % 60).padStart(2, "0")})`
-                    }
-                  </span>
                 </div>
-                <button type="button" onClick={endCall} className="text-xs bg-red-900/50 text-red-400 hover:bg-red-900 px-3 py-1 rounded border border-red-800 transition">End Call</button>
-              </div>
-            )}
+
+            ) : (
+
+                alerts.map(alert => (
+                    <div
+                        key={alert._id}
+                        className="border border-gray-800 rounded-xl p-6 mb-5 bg-gray-950"
+                    >
+                        <div className="flex justify-between items-center">
+                            <span
+                                className={`px-3 py-1 rounded text-xs font-bold
+                                ${
+                                    alert.severity==="High"
+                                    ? "bg-red-900 text-red-300"
+                                    : alert.severity==="Medium"
+                                    ? "bg-yellow-900 text-yellow-300"
+                                    : "bg-green-900 text-green-300"
+                                }
+                                `}
+                            >
+                                {alert.severity}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {alert.status}
+                            </span>
+                        </div>
+
+                        <h2 className="text-xl font-bold text-white mt-4">
+                          {alert.signal_type}
+                        </h2>
+
+                        <p className="text-gray-300 mt-3">
+                          {alert.summary}
+                        </p>
+
+                        <p className="text-xs text-gray-500 mt-2">
+    {alert.created_at}
+</p>
+
+                        <div className="mt-4 bg-blue-950/30 border-l-4 border-blue-600 p-3 rounded">
+                            <p className="text-blue-300 text-sm">
+                              {alert.recommended_action}
+                            </p>
+                        </div>
+
+                        
+                        <div className="flex gap-3 mt-5">
+
+    <button
+        onClick={() => {
+
+            setSelectedAlert(alert._id);
+            setFeedbackType("dismiss");
+            setFeedback("");
+            setShowFeedbackModal(true);
+
+        }}
+        className="bg-red-600 hover:bg-red-700 px-5 py-2 rounded-lg font-semibold"
+    >
+        Dismiss
+    </button>
+
+    <button
+        onClick={() => {
+
+            setSelectedAlert(alert._id);
+            setFeedbackType("resolve");
+            setFeedback("");
+            setShowFeedbackModal(true);
+
+        }}
+        className="bg-green-600 hover:bg-green-700 px-5 py-2 rounded-lg font-semibold"
+    >
+        Resolve
+    </button>
+
+</div>
+                    </div>
+                ))
+            )
+            }
           </div>
 
           {/* Gate Delivery Verification Section */}
@@ -427,53 +389,84 @@ export default function GuardDashboard({ onLogout }) {
               {preApprovals.length === 0 ? (
                 <p className="text-xs text-gray-500 italic text-center py-4">No active delivery pre-approvals listed.</p>
               ) : (
-                preApprovals.map((delivery) => (
-                  <div
-                    key={delivery.delivery_id}
-                    className={`p-4 rounded-xl border transition-all duration-300 ${delivery.status === "verified"
-                      ? "bg-gray-950/40 border-emerald-900/40 opacity-60"
-                      : "bg-gray-950 border-gray-800"
-                      }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="mt-2.5 space-y-1 text-xs">
-                          <p className="text-gray-400 font-sans">
-                            Expected:{" "}
-                            <strong className="text-white font-mono">
-                              {delivery.arrival_window}
-                            </strong>
-                          </p>
+                [...preApprovals]
+  .sort((a, b) => {
 
-                          <p className="text-gray-400 font-sans">
-                            Courier:{" "}
-                            <strong className="text-blue-400 font-sans">
-                              {delivery.delivery_service}
-                            </strong>
-                          </p>
+    // Active deliveries always come first
+    if (a.status === "active" && b.status !== "active") return -1;
+    if (a.status !== "active" && b.status === "active") return 1;
 
-                          <p className="text-[10px] text-gray-500 font-sans">
-                            Destination: {delivery.resident_flat}
-                          </p>
-                        </div>
-                      </div>
+    return 0;
+  })
+  .map((delivery) => (
+  <div
+    key={delivery.delivery_id}
+    className={`p-4 rounded-xl border transition-all duration-300 ${
+      delivery.status === "PASSED_GATE"
+        ? "bg-gray-950/40 border-emerald-900/40 opacity-60"
+        : "bg-gray-950 border-gray-800"
+    }`}
+  >
+    <div className="flex justify-between items-start">
+      <div>
+        <div className="mt-2.5 space-y-1 text-xs">
+          <p className="text-gray-400 font-sans">
+            Expected:{" "}
+            <strong className="text-white font-mono">
+              {delivery.arrival_window}
+            </strong>
+          </p>
 
-                      {delivery.status === "active" ? (
-                        <button
-                          onClick={() => handleAllowEntry(delivery.delivery_id)}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md border border-emerald-500 shrink-0 self-center"
-                        >
-                          Allow Entry
-                        </button>
-                      ) : (
-                        <span className="text-xs font-mono text-emerald-500 bg-emerald-950/20 px-3 py-1 rounded border border-emerald-900/50 self-center">
-                          PASSED_GATE
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
+          <p className="text-gray-400 font-sans">
+            Courier:{" "}
+            <strong className="text-blue-400 font-sans">
+              {delivery.delivery_service}
+            </strong>
+          </p>
+
+          <p className="text-[10px] text-gray-500 font-sans">
+            Destination: {delivery.resident_flat}
+          </p>
+        </div>
+      </div>
+
+<div className="flex flex-col gap-2">
+
+  {/* Top button */}
+  {delivery.status === "active" ? (
+    <button
+      onClick={() => handleAllowEntry(delivery.delivery_id)}
+      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition"
+    >
+      Allow Entry
+    </button>
+  ) : (
+    <button
+      disabled
+      className="bg-gray-600 text-white text-xs font-bold px-4 py-2 rounded-lg cursor-not-allowed"
+    >
+      Passed Gate
+    </button>
+  )}
+
+  {/* Bottom button */}
+  <button
+    onClick={() => handleExit(delivery.delivery_id)}
+    disabled={delivery.status !== "PASSED_GATE"}
+    className={`text-white text-xs font-bold px-4 py-2 rounded-lg transition ${
+      delivery.status === "PASSED_GATE"
+        ? "bg-red-600 hover:bg-red-700"
+        : "bg-gray-700 cursor-not-allowed opacity-50"
+    }`}
+  >
+    Exit
+  </button>
+
+</div>
+    </div>
+  </div>
+))
+)}
             </div>
           </div>
         </div>
@@ -483,26 +476,77 @@ export default function GuardDashboard({ onLogout }) {
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Live Event Stream</h3>
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-[11px] text-gray-500 scroll-smooth">
-            {alerts.map(alert => (
-              <div
-                key={alert._id}
-                className="border-b border-gray-800 pb-3 animate-fadeIn"
-              >
-                <div className="text-xs text-gray-500">
-                  {alert.signal_type}
-                </div>
-                <div className="text-white mt-1">
-                  {alert.summary}
-                </div>
-                <div className="text-blue-400 mt-1 text-xs">
-                  {alert.gate_id}
-                </div>
-              </div>
-            ))}
-          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+  <p className="text-xs text-gray-500 text-center mt-6">
+    No recent events
+  </p>
+</div>
+      
         </div>
       </main>
+      {showFeedbackModal && (
+  <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+
+    <div className="bg-gray-900 border border-gray-700 rounded-xl w-[500px] p-6">
+
+      <h2 className="text-xl font-bold text-white mb-4">
+        {feedbackType === "resolve"
+          ? "Resolve Alert"
+          : "Dismiss Alert"}
+      </h2>
+
+      <textarea
+        rows="5"
+        value={feedback}
+        onChange={(e) => setFeedback(e.target.value)}
+        className="w-full bg-gray-950 border border-gray-700 rounded-lg p-3 text-white"
+        placeholder="Enter guard feedback..."
+      />
+
+      <div className="flex justify-end gap-3 mt-5">
+
+        <button
+          onClick={() => {
+            setShowFeedbackModal(false);
+            setFeedback("");
+          }}
+          className="px-5 py-2 bg-gray-700 rounded-lg"
+        >
+          Cancel
+        </button>
+
+        <button
+          onClick={() => {
+
+    if (!feedback.trim()) {
+
+        alert("Please enter feedback.");
+
+        return;
+    }
+
+    if (feedbackType === "resolve") {
+
+        resolveAlert();
+
+    } else {
+
+        dismissAlert();
+
+    }
+
+}}
+          className="px-5 py-2 bg-blue-600 rounded-lg"
+        >
+          Submit
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+)}
     </div>
   );
 }

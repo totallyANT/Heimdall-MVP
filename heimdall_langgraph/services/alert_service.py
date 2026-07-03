@@ -1,9 +1,14 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import random
 import uuid
 
 import database
 
+def ist_now():
+    return datetime.now(
+        ZoneInfo("Asia/Kolkata")
+    ).strftime("%Y-%m-%d %H:%M:%S IST")
 
 # ------------------------------------------------------
 # Internal Helpers
@@ -70,14 +75,15 @@ def route_alert(alert):
 
         "assigned_guard": None,
 
-        "verified": False,
+        "dismissed": False,
 
         "resolved": False,
 
-        "created_at": datetime.utcnow(),
+        "feedback": "",
 
-        "updated_at": datetime.utcnow()
+        "created_at": ist_now(),
 
+        "updated_at": ist_now()
     }
 
     # ------------------------------------
@@ -148,14 +154,19 @@ def route_alert(alert):
 # Guard Actions
 # ------------------------------------------------------
 
-def verify_alert(alert_id):
+def dismiss_alert(alert_id, feedback):
 
-    database.verify_alert(alert_id)
+    database.dismiss_alert(
+        alert_id,
+        feedback
+    )
 
+def resolve_alert(alert_id, feedback):
 
-def resolve_alert(alert_id):
-
-    database.resolve_alert(alert_id)
+    database.resolve_alert(
+        alert_id,
+        feedback
+    )
 
 
 def assign_guard(alert_id, guard_id):

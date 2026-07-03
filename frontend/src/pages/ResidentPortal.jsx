@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { getResidentAlerts } from "../services/alerts";
 import ResidentBot from '../components/ResidentBot';
@@ -16,6 +15,7 @@ export default function ResidentPortal({ onLogout }) {
   const [profile, setProfile] = useState(null);
   const [vehicleInput, setVehicleInput] = useState("");
   const [qrPassId, setQrPassId] = useState(null);
+  const [qrUrl, setQrUrl] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
   const [announcements, setAnnouncements] = useState([]);
   const [currentAnnouncement, setCurrentAnnouncement] = useState(0);
@@ -336,14 +336,12 @@ export default function ResidentPortal({ onLogout }) {
 
       alert(data.message);
 
-      await fetchPendingRequests();
-
-      if (
-        pendingRequests.pending_deliveries.length === 0 &&
-        pendingRequests.pending_visitors.length === 0
-      ) {
-        setPendingPopup(false);
+      if (requestType === "visitor") {
+        setQrPassId(data.passId);
+        setShowQrModal(true);
       }
+
+      await fetchPendingRequests();
     } catch (error) {
       console.error(error);
     }
@@ -365,9 +363,11 @@ export default function ResidentPortal({ onLogout }) {
       await fetchPendingRequests();
 
       if (
-        pendingRequests.pending_deliveries.length === 0 &&
-        pendingRequests.pending_visitors.length === 0
+        data.pending_deliveries.length > 0 ||
+        data.pending_visitors.length > 0
       ) {
+        setPendingPopup(true);
+      } else {
         setPendingPopup(false);
       }
     } catch (error) {
@@ -874,61 +874,16 @@ export default function ResidentPortal({ onLogout }) {
             </button>
           </div>
         </div>
-
-        <div className="mt-6 bg-gray-900 rounded-xl p-6 border border-gray-800 shadow-lg overflow-hidden">
-          <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-3">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Recent Activity</h2>
-            <span className="text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded border border-gray-700">Last 7 Days</span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-gray-300 min-w-[600px]">
-              <thead className="text-xs text-gray-500 uppercase bg-gray-950/50 border-y border-gray-800">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Timestamp</th>
-                  <th className="px-4 py-3 font-medium">Entity / Guest Name</th>
-                  <th className="px-4 py-3 font-medium">Location</th>
-                  <th className="px-4 py-3 font-medium">Clearance Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800 font-mono text-xs">
-                <tr className="hover:bg-gray-800/50 transition">
-                  <td className="px-4 py-3 text-gray-500">Today, 14:32:01</td>
-                  <td className="px-4 py-3"><span className="text-white font-sans font-bold">John Doe</span> <span className="text-[10px] text-gray-500 ml-1 uppercase">Resident</span></td>
-                  <td className="px-4 py-3">North Gate</td>
-                  <td className="px-4 py-3"><span className="text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded border border-emerald-800/50">ACCESS_GRANTED</span></td>
-                </tr>
-                <tr className="hover:bg-gray-800/50 transition">
-                  <td className="px-4 py-3 text-gray-500">Today, 10:15:44</td>
-                  <td className="px-4 py-3"><span className="text-blue-400 font-sans font-bold">Jane Smith</span> <span className="text-[10px] text-blue-500 ml-1 uppercase">Guest QR</span></td>
-                  <td className="px-4 py-3">Lobby Turnstile</td>
-                  <td className="px-4 py-3"><span className="text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded border border-emerald-800/50">ACCESS_GRANTED</span></td>
-                </tr>
-                <tr className="hover:bg-gray-800/50 transition">
-                  <td className="px-4 py-3 text-gray-500">Today, 09:00:15</td>
-                  <td className="px-4 py-3"><span className="text-yellow-400 font-sans font-bold">Maid</span> <span className="text-[10px] text-yellow-500 ml-1 uppercase">Worker QR</span></td>
-                  <td className="px-4 py-3">Service Gate</td>
-                  <td className="px-4 py-3"><span className="text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded border border-emerald-800/50">ACCESS_GRANTED (Scale Valid)</span></td>
-                </tr>
-                <tr className="hover:bg-gray-800/50 transition">
-                  <td className="px-4 py-3 text-gray-500">Yesterday, 19:05:12</td>
-                  <td className="px-4 py-3"><span className="text-purple-400 font-sans font-bold">Birthday Party</span> <span className="text-[10px] text-purple-500 ml-1 uppercase">Group QR</span></td>
-                  <td className="px-4 py-3">South Gate</td>
-                  <td className="px-4 py-3"><span className="text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded border border-emerald-800/50">ACCESS_GRANTED (4/15)</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
       </main>
       <ResidentBot />
 
       {showQrModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 text-center relative">
+          <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 text-center relative w-[360px]">
+
             <button
               onClick={() => setShowQrModal(false)}
-              className="absolute top-3 right-3 text-gray-400 hover:text-white"
+              className="absolute top-3 right-3 text-gray-400 hover:text-white text-xl"
             >
               ✕
             </button>
@@ -937,23 +892,29 @@ export default function ResidentPortal({ onLogout }) {
               QR Pass Generated
             </h2>
 
-            <img
-              src={`http://127.0.0.1:8000/qr/${qrPassId}`}
-              alt="QR Code"
-              className="w-64 h-64 mx-auto rounded-lg bg-white p-2"
-            />
+            {qrPassId && (
+              <>
+                <img
+                  src={`http://127.0.0.1:8000/qr/${qrPassId}`}
+                  alt="QR Code"
+                  className="w-64 h-64 mx-auto rounded-lg bg-white p-2"
+                />
 
-            <p className="text-cyan-400 font-mono mt-4 text-lg">
-              {qrPassId.startsWith("VIS-")
-                ? `Guest ID: ${qrPassId}`
-                : qrPassId.startsWith("GRP-")
-                  ? `Group ID: ${qrPassId}`
-                  : `Worker ID: ${qrPassId}`}
-            </p>
+                <div className="mt-4 mb-4 bg-gray-950 border border-cyan-700 rounded-lg px-4 py-3">
+                  <p className="text-gray-400 text-xs uppercase mb-1">
+                    Pass ID
+                  </p>
+
+                  <p className="text-cyan-400 font-mono text-lg tracking-wider">
+                    {qrPassId}
+                  </p>
+                </div>
+              </>
+            )}
 
             <button
               onClick={downloadQr}
-              className="mt-4 bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg text-white font-semibold"
+              className="w-full bg-blue-600 hover:bg-blue-700 px-5 py-3 rounded-lg text-white font-semibold"
             >
               Download QR
             </button>

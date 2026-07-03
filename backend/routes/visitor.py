@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException
 from database import db
 from pydantic import BaseModel, Field
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 router = APIRouter()
 
@@ -40,7 +42,7 @@ class DeliveryRequest(BaseModel):
 @router.post("/guest")
 def create_guest_pass(payload: GuestPassRequest):
 
-    resident = db.residents.find_one({
+    resident =  db.residents.find_one({
         "id": payload.resident_id
     })
 
@@ -50,7 +52,7 @@ def create_guest_pass(payload: GuestPassRequest):
             detail="Resident not found"
         )
 
-    guest_count = db.guest_passes.count_documents({})
+    guest_count =  db.guest_passes.count_documents({})
     guest_id = f"VIS-{guest_count + 101}"
 
     qr_data = {
@@ -80,9 +82,9 @@ def create_guest_pass(payload: GuestPassRequest):
 
 # ---------- Group Pass ----------
 @router.post("/group")
-def create_group_pass(payload: GroupPassRequest):
+async def create_group_pass(payload: GroupPassRequest):
 
-    resident = db.residents.find_one({
+    resident = await db.residents.find_one({
         "id": payload.resident_id
     })
 
@@ -92,7 +94,7 @@ def create_group_pass(payload: GroupPassRequest):
             detail="Resident not found"
         )
 
-    group_count = db.group_passes.count_documents({})
+    group_count = await db.group_passes.count_documents({})
     group_id = f"GRP-{group_count + 101}"
 
     qr_data = {
@@ -113,7 +115,7 @@ def create_group_pass(payload: GroupPassRequest):
         "qrData": qr_data
     }
 
-    db.group_passes.insert_one(group_doc)
+    await db.group_passes.insert_one(group_doc)
 
     return {
         "message": "Group pass created successfully",
@@ -125,9 +127,9 @@ def create_group_pass(payload: GroupPassRequest):
 
 
 @router.post("/worker")
-def create_worker_pass(payload: WorkerPassRequest):
+async def create_worker_pass(payload: WorkerPassRequest):
 
-    resident = db.residents.find_one({
+    resident = await db.residents.find_one({
         "id": payload.resident_id
     })
 
@@ -137,7 +139,7 @@ def create_worker_pass(payload: WorkerPassRequest):
             detail="Resident not found"
         )
 
-    worker_count = db.worker_passes.count_documents({})
+    worker_count = await db.worker_passes.count_documents({})
     worker_id = f"WRK-{worker_count + 101}"
 
     qr_data = {
@@ -156,7 +158,7 @@ def create_worker_pass(payload: WorkerPassRequest):
         "qrData": qr_data
     }
 
-    db.worker_passes.insert_one(worker_doc)
+    await db.worker_passes.insert_one(worker_doc)
 
     return {
         "message": "Worker pass created successfully",
@@ -191,12 +193,17 @@ def create_delivery_notification(payload: DeliveryRequest):
     delivery_count = db.delivery_notifications.count_documents({})
     delivery_id = f"DLV-{delivery_count + 101}"
 
+    approved_time = datetime.now(
+    ZoneInfo("Asia/Kolkata")
+).strftime("%Y-%m-%d %H:%M:%S IST")
+
     delivery_doc = {
         "delivery_id": delivery_id,
         "resident_id": payload.resident_id,
         "resident_flat": resident["flat_number"],
         "delivery_service": payload.delivery_service or "Unknown",
         "arrival_window": payload.arrival_window,
+        "approved_time": approved_time,
         "status": "active"
     }
 
