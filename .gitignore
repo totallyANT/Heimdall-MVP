@@ -1,17 +1,17 @@
-# Python
-__pycache__/
-*.py[cod]
-env/
-.venv/
+# Ignore build artifacts
+dist/
+build/
+*.spec
+
+# Ignore Python environment and cache
 venv/
+__pycache__/
+*.pyc
 
-# Node
-frontend/node_modules/
-
-# Environment variables
+# Ignore AI model weights and local secrets
+yolov8n.pt
 .env
 
-# VS Code
-.vscode/
-
-chroma_db/
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
