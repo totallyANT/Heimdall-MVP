@@ -471,18 +471,6 @@ const dismissAlert = async () => {
           </div>
         </div>
 
-        <div className="bg-gray-900 rounded-xl border border-gray-800 flex flex-col h-full overflow-hidden shadow-lg shadow-blue-900/10">
-          <div className="p-4 border-b border-gray-800 bg-gray-950/30 flex justify-between items-center">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Live Event Stream</h3>
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4">
-  <p className="text-xs text-gray-500 text-center mt-6">
-    No recent events
-  </p>
-</div>
-      
-        </div>
       </main>
       {showFeedbackModal && (
   <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
