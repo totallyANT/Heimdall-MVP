@@ -40,6 +40,13 @@ def get_pending_deliveries():
         status = delivery["status"]
         window = delivery["arrival_window"].lower()
 
+        approved = datetime.strptime(
+    delivery["approved_time"],
+    "%Y-%m-%d %H:%M:%S IST"
+).replace(
+    tzinfo=ZoneInfo("Asia/Kolkata")
+)
+
         visible = False
         expired = False
 
@@ -49,65 +56,54 @@ def get_pending_deliveries():
 
         if window == "morning":
 
-            start = now.replace(
+            start = approved.replace(
                 hour=8,
                 minute=0,
                 second=0,
                 microsecond=0
             )
 
-            end = now.replace(
+            end = approved.replace(
                 hour=12,
                 minute=0,
                 second=0,
                 microsecond=0
             )
-
-            # If morning already passed today,
-            # assume resident meant tomorrow morning
-            if now.hour >= 12 and status == "active":
-                start += timedelta(days=1)
-                end += timedelta(days=1)
+            
 
         elif window == "afternoon":
 
-            start = now.replace(
+            start = approved.replace(
                 hour=12,
                 minute=0,
                 second=0,
                 microsecond=0
             )
 
-            end = now.replace(
+            end = approved.replace(
                 hour=16,
                 minute=0,
                 second=0,
                 microsecond=0
             )
 
-            if now.hour >= 16 and status == "active":
-                start += timedelta(days=1)
-                end += timedelta(days=1)
-
+        
         elif window == "evening":
 
-            start = now.replace(
+            start = approved.replace(
                 hour=16,
                 minute=0,
                 second=0,
                 microsecond=0
             )
 
-            end = now.replace(
+            end = approved.replace(
                 hour=20,
                 minute=0,
                 second=0,
                 microsecond=0
             )
 
-            if now.hour >= 20 and status == "active":
-                start += timedelta(days=1)
-                end += timedelta(days=1)
 
         elif window == "1hour":
 
@@ -128,24 +124,22 @@ def get_pending_deliveries():
         # Decide status
         # -----------------------------------------
 
-        # Before window
-        if now < start:
+        # ACTIVE deliveries
+        if status == "active":
 
-            if status == "active":
-                visible = False
+           if now < start:
+             visible = False
 
-            elif status == "PASSED_GATE":
-                visible = True
+           elif start <= now < end:
+             visible = True
 
-        # During window
-        elif start <= now < end:
+           else:
+             expired = True
 
-            visible = True
+        # Courier already entered
+        elif status == "PASSED_GATE":
 
-        # After window
-        else:
-
-            expired = True
+             visible = True
 
         # -----------------------------------------
         # Expire
