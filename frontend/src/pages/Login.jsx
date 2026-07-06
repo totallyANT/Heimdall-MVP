@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Eye, EyeOff } from "lucide-react";
 
+const API = import.meta.env.VITE_MAIN_BACKEND_URL || "http://127.0.0.1:8000";
+
 export default function Login({ onLogin }) {
   const [view, setView] = useState('signin');
   const [role, setRole] = useState('Resident');
@@ -23,13 +25,15 @@ export default function Login({ onLogin }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // --------------------------------------------
+  // Handle Authentication Login
+  // --------------------------------------------
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
     let endpoint = '';
-
     if (role === 'Resident') {
       endpoint = '/auth/login';
     } else if (role === 'Security') {
@@ -39,7 +43,7 @@ export default function Login({ onLogin }) {
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000${endpoint}`, {
+      const response = await fetch(`${API}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -57,7 +61,6 @@ export default function Login({ onLogin }) {
       }
 
       setSuccess(data.message);
-
       sessionStorage.setItem("user", JSON.stringify(data));
 
       setTimeout(() => {
@@ -69,7 +72,9 @@ export default function Login({ onLogin }) {
     }
   };
 
-
+  // --------------------------------------------
+  // Handle Account Identity Initialization
+  // --------------------------------------------
   const handleSignup = async (e) => {
     e.preventDefault();
     setError('');
@@ -85,7 +90,6 @@ export default function Login({ onLogin }) {
 
     if (signupRole === 'Resident') {
       endpoint = '/auth/initialize';
-
       payload = {
         id: assignedId,
         flat_number: flatNumber,
@@ -98,7 +102,6 @@ export default function Login({ onLogin }) {
       };
     } else {
       endpoint = '/auth/security/initialize';
-
       payload = {
         id: assignedId,
         temp_passcode: tempPasscode,
@@ -111,7 +114,7 @@ export default function Login({ onLogin }) {
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000${endpoint}`, {
+      const response = await fetch(`${API}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

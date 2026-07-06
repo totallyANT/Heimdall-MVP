@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API = "http://127.0.0.1:8000";
+const API = import.meta.env.VITE_MAIN_BACKEND_URL || "http://127.0.0.1:8000";
 
 export default function AdminTower({ onLogout }) {
   const [lockdown, setLockdown] = useState(false);
@@ -25,15 +25,11 @@ export default function AdminTower({ onLogout }) {
 
   const loadDashboard = async () => {
     try {
-      const alertsResponse = await fetch(
-        "http://127.0.0.1:8000/alerts/admin"
-      );
+      const alertsResponse = await fetch(`${API}/alerts/admin`);
       const alertsData = await alertsResponse.json();
       setAlerts(alertsData);
 
-      const profileResponse = await fetch(
-        `http://127.0.0.1:8000/profile/admin/${adminId}`
-      );
+      const profileResponse = await fetch(`${API}/profile/admin/${adminId}`);
       const admin = await profileResponse.json();
 
       setCurrentAdmin({
@@ -51,9 +47,7 @@ export default function AdminTower({ onLogout }) {
 
   const fetchDirectory = async () => {
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/community/community-directory"
-      );
+      const response = await fetch(`${API}/community/community-directory`);
       const data = await response.json();
 
       const formatted = data.map((item) => ({
@@ -165,28 +159,15 @@ export default function AdminTower({ onLogout }) {
     }
   };
 
-  const handleBroadcast = async (e) => {
+const handleBroadcast = async (e) => {
     e.preventDefault();
-
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/announcement/send-announcement",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            title: broadcastTitle,
-            message: broadcastMsg,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to send announcement");
-      }
-
+      const response = await fetch(`${API}/announcement/send-announcement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: broadcastTitle, message: broadcastMsg }),
+      });
+      if (!response.ok) throw new Error("Failed to send announcement");
       alert("Announcement sent successfully!");
       setBroadcastTitle("");
       setBroadcastMsg("");
@@ -197,27 +178,17 @@ export default function AdminTower({ onLogout }) {
   };
 
   const handleRemoveUserDirect = async (user) => {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to revoke ${user.name}?`
-    );
-
+    const confirmDelete = window.confirm(`Are you sure you want to revoke ${user.name}?`);
     if (!confirmDelete) return;
 
     try {
-      const endpoint =
-        user.role === "Resident"
-          ? `http://127.0.0.1:8000/community/resident/${user.id}`
-          : `http://127.0.0.1:8000/community/guard/${user.id}`;
+      const endpoint = user.role === "Resident"
+          ? `${API}/community/resident/${user.id}`
+          : `${API}/community/guard/${user.id}`;
 
-      const response = await fetch(endpoint, {
-        method: "DELETE",
-      });
-
+      const response = await fetch(endpoint, { method: "DELETE" });
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || "Failed to revoke user");
-      }
+      if (!response.ok) throw new Error(data.detail || "Failed to revoke user");
 
       alert(data.message);
       setUsers(prev => prev.filter(u => u.id !== user.id));
@@ -229,17 +200,8 @@ export default function AdminTower({ onLogout }) {
 
   const handleAssignGuard = async (alertId) => {
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/alerts/${alertId}/assign/GRD-101`,
-        {
-          method: "POST"
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to assign guard");
-      }
-
+      const response = await fetch(`${API}/alerts/${alertId}/assign/GRD-101`, { method: "POST" });
+      if (!response.ok) throw new Error("Failed to assign guard");
       loadDashboard();
     } catch (err) {
       console.error(err);

@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { getResidentAlerts } from "../services/alerts";
 import ResidentBot from '../components/ResidentBot';
+
+const API = import.meta.env.VITE_MAIN_BACKEND_URL || "http://127.0.0.1:8000";
 
 export default function ResidentPortal({ onLogout }) {
   const [, setToast] = useState(false);
@@ -15,7 +17,6 @@ export default function ResidentPortal({ onLogout }) {
   const [profile, setProfile] = useState(null);
   const [vehicleInput, setVehicleInput] = useState("");
   const [qrPassId, setQrPassId] = useState(null);
-  const [qrUrl, setQrUrl] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
   const [announcements, setAnnouncements] = useState([]);
   const [currentAnnouncement, setCurrentAnnouncement] = useState(0);
@@ -40,6 +41,9 @@ export default function ResidentPortal({ onLogout }) {
     e.target.reset();
   };
 
+  // --------------------------------------------
+  // Handle Guest Request Lifecycle
+  // --------------------------------------------
   const handleGuestSubmit = async (e) => {
     e.preventDefault();
 
@@ -53,21 +57,18 @@ export default function ResidentPortal({ onLogout }) {
     }
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/visitor/guest",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            resident_id: residentId,
-            guest_name: guestName,
-            entry_date: entryDate,
-            duration_days: duration
-          })
-        }
-      );
+      const response = await fetch(`${API}/visitor/guest`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          resident_id: residentId,
+          guest_name: guestName,
+          entry_date: entryDate,
+          duration_days: duration
+        })
+      });
 
       const data = await response.json();
 
@@ -87,7 +88,9 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
-  {/* Group Submission */ }
+  // --------------------------------------------
+  // Handle Group Request Lifecycle
+  // --------------------------------------------
   const handleGroupSubmit = async (e) => {
     e.preventDefault();
 
@@ -102,22 +105,19 @@ export default function ResidentPortal({ onLogout }) {
     }
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/visitor/group",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            resident_id: residentId,
-            group_name: groupName,
-            entry_date: entryDate,
-            duration_days: duration,
-            visitor_limit: limit
-          })
-        }
-      );
+      const response = await fetch(`${API}/visitor/group`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          resident_id: residentId,
+          group_name: groupName,
+          entry_date: entryDate,
+          duration_days: duration,
+          visitor_limit: limit
+        })
+      });
 
       const data = await response.json();
 
@@ -137,6 +137,9 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
+  // --------------------------------------------
+  // Handle Contract Worker Request Lifecycle
+  // --------------------------------------------
   const handleWorkerSubmit = async (e) => {
     e.preventDefault();
 
@@ -150,21 +153,18 @@ export default function ResidentPortal({ onLogout }) {
     }
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/visitor/worker",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            resident_id: residentId,
-            worker_name: workerName,
-            start_time: start,
-            end_time: end
-          })
-        }
-      );
+      const response = await fetch(`${API}/visitor/worker`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          resident_id: residentId,
+          worker_name: workerName,
+          start_time: start,
+          end_time: end
+        })
+      });
 
       const data = await response.json();
 
@@ -184,12 +184,12 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
+  // --------------------------------------------
+  // Download Secure QR Verification Token
+  // --------------------------------------------
   const downloadQr = async () => {
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/qr/${qrPassId}`
-      );
-
+      const response = await fetch(`${API}/qr/${qrPassId}`);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
 
@@ -206,6 +206,9 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
+  // --------------------------------------------
+  // Handle Delivery Notification Dispatch
+  // --------------------------------------------
   const handleDeliverySubmit = async (e) => {
     e.preventDefault();
 
@@ -213,20 +216,17 @@ export default function ResidentPortal({ onLogout }) {
     const arrivalWindow = e.target.arrivalWindow.value;
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/visitor/delivery",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            resident_id: residentId,
-            delivery_service: deliveryService || null,
-            arrival_window: arrivalWindow
-          })
-        }
-      );
+      const response = await fetch(`${API}/visitor/delivery`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          resident_id: residentId,
+          delivery_service: deliveryService || null,
+          arrival_window: arrivalWindow
+        })
+      });
 
       const data = await response.json();
 
@@ -236,7 +236,6 @@ export default function ResidentPortal({ onLogout }) {
 
       setDeliverySuccess(true);
       setTimeout(() => setDeliverySuccess(false), 3000);
-
       e.target.reset();
 
     } catch (err) {
@@ -244,27 +243,25 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
+  // --------------------------------------------
+  // Resident Asset Tracking - Add Vehicle
+  // --------------------------------------------
   const addVehicle = async (e) => {
     e.preventDefault();
-
     const vehicle = vehicleInput.trim().toUpperCase();
-
     if (!vehicle) return;
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/resident/add-vehicle",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            resident_id: residentId,
-            plate_number: vehicle
-          })
-        }
-      );
+      const response = await fetch(`${API}/resident/add-vehicle`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          resident_id: residentId,
+          plate_number: vehicle
+        })
+      });
 
       const data = await response.json();
 
@@ -280,14 +277,43 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
+  // --------------------------------------------
+  // Resident Asset Tracking - Remove Vehicle
+  // --------------------------------------------
+  const removeVehicle = async (vehicle) => {
+    try {
+      const response = await fetch(`${API}/resident/remove-vehicle`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          resident_id: residentId,
+          plate_number: vehicle
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail);
+      }
+
+      setVehicles(vehicles.filter(v => v !== vehicle));
+
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // --------------------------------------------
+  // Access Controls - Report Lost Keycard
+  // --------------------------------------------
   const handleLostCard = async () => {
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/resident/report-lost-card/${residentId}`,
-        {
-          method: "POST"
-        }
-      );
+      const response = await fetch(`${API}/resident/report-lost-card/${residentId}`, {
+        method: "POST"
+      });
 
       const data = await response.json();
 
@@ -303,37 +329,34 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
+  // --------------------------------------------
+  // Verification Ingestion - Gate Check Queue
+  // --------------------------------------------
   const fetchPendingRequests = async () => {
-    const response = await fetch(
-      `http://127.0.0.1:8000/resident/pending-requests/${residentId}`
-    );
+    try {
+      const response = await fetch(`${API}/resident/pending-requests/${residentId}`);
+      const data = await response.json();
+      console.log(data);
 
-    const data = await response.json();
-    console.log(data);
+      setPendingRequests(data);
 
-    setPendingRequests(data);
-
-    if (
-      data.pending_deliveries.length > 0 ||
-      data.pending_visitors.length > 0
-    ) {
-      setPendingPopup(true);
-    } else {
-      setPendingPopup(false);   // IMPORTANT
+      if (data.pending_deliveries.length > 0 || data.pending_visitors.length > 0) {
+        setPendingPopup(true);
+      } else {
+        setPendingPopup(false);
+      }
+    } catch (err) {
+      console.error("Failed to load pending entry checks:", err);
     }
   };
 
   const approveRequest = async (requestType, requestId) => {
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/resident/approve-request/${residentId}/${requestType}/${requestId}`,
-        {
-          method: "POST"
-        }
-      );
+      const response = await fetch(`${API}/resident/approve-request/${residentId}/${requestType}/${requestId}`, {
+        method: "POST"
+      });
 
       const data = await response.json();
-
       alert(data.message);
 
       if (requestType === "visitor") {
@@ -349,23 +372,16 @@ export default function ResidentPortal({ onLogout }) {
 
   const rejectRequest = async (requestType, requestId) => {
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/resident/reject-request/${requestType}/${requestId}`,
-        {
-          method: "POST"
-        }
-      );
+      const response = await fetch(`${API}/resident/reject-request/${requestType}/${requestId}`, {
+        method: "POST"
+      });
 
       const data = await response.json();
-
       alert(data.message);
 
       await fetchPendingRequests();
 
-      if (
-        data.pending_deliveries.length > 0 ||
-        data.pending_visitors.length > 0
-      ) {
+      if (data.pending_deliveries.length > 0 || data.pending_visitors.length > 0) {
         setPendingPopup(true);
       } else {
         setPendingPopup(false);
@@ -375,6 +391,9 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
+  // --------------------------------------------
+  // Global View Layout Cycles
+  // --------------------------------------------
   const nextAnnouncement = () => {
     setCurrentAnnouncement((prev) =>
       prev === announcements.length - 1 ? 0 : prev + 1
@@ -387,35 +406,7 @@ export default function ResidentPortal({ onLogout }) {
     );
   };
 
-  const removeVehicle = async (vehicle) => {
-    try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/resident/remove-vehicle",
-        {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            resident_id: residentId,
-            plate_number: vehicle
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail);
-      }
-
-      setVehicles(vehicles.filter(v => v !== vehicle));
-
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
+  // Hooks tracking data fetch operations
   useEffect(() => {
     fetchPendingRequests();
   }, []);
@@ -423,10 +414,7 @@ export default function ResidentPortal({ onLogout }) {
   useEffect(() => {
     const fetchAnnouncements = async () => {
       try {
-        const response = await fetch(
-          "http://127.0.0.1:8000/resident/announcements"
-        );
-
+        const response = await fetch(`${API}/resident/announcements`);
         const data = await response.json();
 
         if (!response.ok) {
@@ -445,10 +433,7 @@ export default function ResidentPortal({ onLogout }) {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const response = await fetch(
-          `http://127.0.0.1:8000/resident/profile/${residentId}`
-        );
-
+        const response = await fetch(`${API}/resident/profile/${residentId}`);
         const data = await response.json();
 
         if (!response.ok) {
@@ -468,11 +453,9 @@ export default function ResidentPortal({ onLogout }) {
   }, [residentId]);
 
   useEffect(() => {
-
     if (!residentId) return;
 
     const loadAlerts = async () => {
-
       try {
         const data = await getResidentAlerts(residentId);
         setAlerts(data);
@@ -480,6 +463,7 @@ export default function ResidentPortal({ onLogout }) {
         console.error(err);
       }
     };
+    
     loadAlerts();
     const interval = setInterval(loadAlerts, 5000);
     return () => clearInterval(interval);
