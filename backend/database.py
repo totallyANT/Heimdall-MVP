@@ -107,6 +107,7 @@ def get_guard_alerts(guard_id):
             alert["updated_at"] = alert["updated_at"].isoformat()
 
     return alerts
+    
 
 
 def get_resident_alerts(resident_id):

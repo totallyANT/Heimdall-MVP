@@ -13,6 +13,7 @@ import csv
 import os
 from datetime import datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from pymongo import MongoClient, DESCENDING, ReturnDocument
 
@@ -35,95 +36,96 @@ def get_db():
 
 
 # ── resident roster ───────────────────────────────────────────────────────────
-def load_resident_ids(csv_path: str = DEFAULT_CSV_PATH) -> list[str]:
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Resident CSV not found: {csv_path}")
-    ids: list[str] = []
-    with open(csv_path, newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            if row.get("status", "").strip().lower() == "active":
-                rid = row.get("_id", "").strip()
-                if rid:
-                    ids.append(rid)
-    if not ids:
-        raise ValueError("No active residents found in the CSV roster.")
-    return ids
+def load_resident_ids() -> list[str]:
+    return ["RES-101", "RES-112"]
 
-
-def _csv_profile(user_id: str, csv_path: str = DEFAULT_CSV_PATH) -> Optional[dict]:
-    """Raw CSV fields for user_id."""
-    if not user_id or not os.path.exists(csv_path):
-        return None
-    with open(csv_path, newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            if row.get("_id", "").strip() == str(user_id).strip():
-                return {k.strip(): v.strip() for k, v in row.items()}
-    return None
 
 
 def get_resident_full_profile(user_id: str) -> Optional[dict]:
-    """
-    Merge CSV static data with the live trust_score from MongoDB.
-    Returns None if the resident is not in the CSV.
-    Initialises trust_score to 1.0 in MongoDB if the field is missing.
-    """
+
     if not user_id:
         return None
 
-    csv_data = _csv_profile(user_id)
-    if csv_data is None:
+    db = get_db()
+
+    resident = db["residents"].find_one({"id": user_id})
+
+    if resident is None:
         return None
 
-    db = get_db()
-    mongo_doc = db["residents"].find_one({"_id": user_id}, {"trust_score": 1})
+    resident.pop("_id", None)
 
-    if mongo_doc is None:
-        # resident exists in CSV but not yet in Mongo residents collection — create stub
-        db["residents"].update_one(
-            {"_id": user_id},
-            {"$setOnInsert": {"trust_score": 1.0}},
-            upsert=True,
-        )
-        trust_score = 1.0
-    else:
-        trust_score = mongo_doc.get("trust_score", 1.0)
+    resident["trust_score"] = int(
+        resident.get("trust_score", 100)
+    )
 
-    return {**csv_data, "trust_score": round(float(trust_score), 3)}
+    return resident
 
 
 # ── trust score mutation ──────────────────────────────────────────────────────
-SEVERITY_PENALTY = {"High": 0.10, "Medium": 0.05, "Low": 0.02}
+SEVERITY_PENALTY = {
+    "High": 10,
+    "Medium": 5,
+    "Low": 2
+}
 
 def update_trust_score(user_id: str, severity: str) -> dict:
     """
     Decrement the resident's trust_score by the severity penalty.
-    Floors at 0.0.  Returns {"old": float, "new": float, "delta": float}.
+    Floors at 0.
+    Returns:
+    {
+        "user_id": str,
+        "old": float,
+        "new": float,
+        "delta": float
+    }
     """
+
     if not user_id:
         return {}
 
-    penalty = SEVERITY_PENALTY.get(severity, 0.02)
+    penalty = SEVERITY_PENALTY.get(severity, 2)
+
     db = get_db()
 
-    # Ensure the document exists with a default score
+    # Ensure resident exists and initialize trust score if missing
     db["residents"].update_one(
-        {"_id": user_id},
-        {"$setOnInsert": {"trust_score": 1.0}},
+        {"id": user_id},
+        {
+            "$setOnInsert": {
+                "trust_score": 100
+            }
+        },
         upsert=True,
     )
 
-    # Fetch current score
-    doc = db["residents"].find_one({"_id": user_id}, {"trust_score": 1})
-    old_score = round(float(doc.get("trust_score", 1.0)), 3)
-    new_score  = round(max(0.0, old_score - penalty), 3)
-
-    db["residents"].update_one(
-        {"_id": user_id},
-        {"$set": {"trust_score": new_score, "last_updated": datetime.now().isoformat()}},
+    # Fetch current trust score
+    doc = db["residents"].find_one(
+        {"id": user_id},
+        {"trust_score": 1}
     )
 
-    return {"user_id": user_id, "old": old_score, "new": new_score, "delta": -round(penalty, 3)}
+    old_score = float(doc.get("trust_score", 100))
+    new_score = max(0, old_score - penalty)
 
+    # Save updated trust score
+    db["residents"].update_one(
+        {"id": user_id},
+        {
+            "$set": {
+                "trust_score": new_score,
+                "last_updated": datetime.now().isoformat()
+            }
+        }
+    )
+
+    return {
+        "user_id": user_id,
+        "old": old_score,
+        "new": new_score,
+        "delta": -penalty
+    }
 
 # ── incident persistence ───────────────────────────────────────────────────────
 def save_tailgating_incident(signal: dict) -> str:
@@ -146,15 +148,15 @@ def save_investigation_report(report: dict) -> None:
 def get_recent_anomalies(
     gate_id: str,
     user_id: Optional[str] = None,
-    hours_back: int = 10,
+    seconds_back: int = 1,
     limit: int = 5,
 ) -> dict:
     """
     Tailgating + forced-open history for the gate (and optionally user)
-    over the last `hours_back` hours.  All ObjectIds stripped.
+    over the last `seconds_back` seconds.  All ObjectIds stripped.
     """
     db = get_db()
-    cutoff = (datetime.now() - timedelta(hours=hours_back)).isoformat()
+    cutoff = (datetime.now() - timedelta(seconds=seconds_back)).isoformat()
 
     gate_q = {"gate_id": gate_id, "timestamp": {"$gte": cutoff}}
     user_q = {"responsible_user_id": user_id, "timestamp": {"$gte": cutoff}} if user_id else {}
@@ -166,23 +168,23 @@ def get_recent_anomalies(
         ]
 
     return {
-        "lookback_hours":            hours_back,
+        "lookback_seconds":         seconds_back,
         "tailgating_at_gate":        _fetch("Tailgating_incidents", gate_q),
         "tailgating_by_user":        _fetch("Tailgating_incidents", user_q) if user_id else [],
         "forced_open_at_gate":       _fetch("Door_Forced_Open_Incidents", gate_q),
     }
 
 
-def get_cross_incident_correlation(incident_timestamp: str, window_minutes: int = 10) -> dict:
-    """Any anomaly in either collection within ±window_minutes of the given timestamp."""
+def get_cross_incident_correlation(incident_timestamp: str, window_seconds: int = 1) -> dict:
+    """Any anomaly in either collection within ±window_seconds of the given timestamp."""
     db = get_db()
     try:
         t = datetime.fromisoformat(incident_timestamp)
     except ValueError:
         return {"correlated_tailgating": [], "correlated_forced_open": []}
 
-    lo = (t - timedelta(minutes=window_minutes)).isoformat()
-    hi = (t + timedelta(minutes=window_minutes)).isoformat()
+    lo = (t - timedelta(seconds=window_seconds)).isoformat()
+    hi = (t + timedelta(seconds=window_seconds)).isoformat()
     q  = {"timestamp": {"$gte": lo, "$lte": hi}}
 
     def _fetch(col):
@@ -197,6 +199,12 @@ def get_cross_incident_correlation(incident_timestamp: str, window_minutes: int 
 # ==========================================================
 # ALERTS
 # ==========================================================
+
+def ist_now():
+    return datetime.now(
+        ZoneInfo("Asia/Kolkata")
+    ).strftime("%Y-%m-%d %H:%M:%S IST")
+
 
 def save_alert(alert: dict):
 
@@ -231,6 +239,93 @@ def update_alert(alert_id, updates: dict):
         {
 
             "$set": updates
+
+        }
+
+    )
+
+
+def get_all_guards():
+
+    return list(get_db()["security_guards"].find({}, {"_id": 0}))
+
+
+def assign_guard(alert_id, guard_id):
+
+    get_db()["alerts"].update_one(
+
+        {
+
+            "alert_id": alert_id
+
+        },
+
+        {
+
+            "$set": {
+
+                "assigned_guard": guard_id,
+
+                "assigned_to": "guard",
+
+                "status": "INVESTIGATING",
+                "updated_at": ist_now()
+
+            }
+
+        }
+
+    )
+
+
+def dismiss_alert(alert_id, feedback):
+
+    get_db()["alerts"].update_one(
+
+        {
+
+            "alert_id": alert_id
+
+        },
+
+        {
+
+            "$set": {
+
+                "dismissed": True,
+                "resolved": False,
+                "status": "DISMISSED",
+                "feedback": feedback,
+                "updated_at": ist_now()
+
+            }
+
+        }
+
+    )
+
+
+def resolve_alert(alert_id, feedback):
+
+    get_db()["alerts"].update_one(
+
+        {
+
+            "alert_id": alert_id
+
+        },
+
+        {
+
+            "$set": {
+
+                "resolved": True,
+                "dismissed": False,
+                "status": "RESOLVED",
+                "feedback": feedback,
+                "updated_at": ist_now()
+
+            }
 
         }
 

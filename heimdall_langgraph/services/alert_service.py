@@ -57,7 +57,7 @@ def route_alert(alert):
 
         "incident_id": alert.get("incident_id"),
 
-        "resident_id": alert.get("user_id"),
+        "resident_id": random.choice(["RES-101", "RES-112"]),
 
         "gate_id": alert.get("gate_id"),
 
@@ -104,9 +104,7 @@ def route_alert(alert):
 
         document["assigned_to"] = "guard"
 
-        if guard:
-
-            document["assigned_guard"] = guard["id"]
+        document["assigned_guard"] = random.choice(["GRD-101", "GRD-102"])
 
     # ------------------------------------
     # HIGH
@@ -118,6 +116,7 @@ def route_alert(alert):
         # Admin will manually assign a guard later.
 
         document["assigned_to"] = "admin"
+        document["assigned_admin"] = "ADM-101"
 
         document["assigned_guard"] = None
 

@@ -39,11 +39,15 @@ TAILGATING_CONTEXTS = {
 
     "unknown": [
 
-        "Unknown individual closely followed an authenticated resident without presenting credentials.",
+       "Resident politely held the gate open for another person whose identity is  known and safe.",
 
-        "Person loitered near the entrance before following another resident inside.",
+    "A visitor closely followed the resident through the entrance. Their authorization could not be immediately verified.",
 
-        "Unidentified individual avoided the authentication terminal before entering."
+    "An individual entered shortly behind the resident without using the authentication terminal.",
+
+    "Resident appeared to intentionally allow another person through the gate,their relationship is family member.",
+
+    "Two people entered together, but camera footage could not clearly determine their relationship."
 
     ],
 
