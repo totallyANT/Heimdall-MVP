@@ -13,6 +13,7 @@ export default function ResidentBot() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef(null);
+  const backendUrl = import.meta.env.VITE_RAG_BACKEND_URL || "http://localhost:8001";
 
   useEffect(() => {
     sessionStorage.setItem('heimdall_chat_history', JSON.stringify(messages));
@@ -31,7 +32,7 @@ export default function ResidentBot() {
     setIsTyping(true);
 
     try {
-      const response = await fetch("http://localhost:8001/chat", {
+      const response = await fetch(`${backendUrl}/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
