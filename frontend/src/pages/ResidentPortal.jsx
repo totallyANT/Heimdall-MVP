@@ -11,7 +11,6 @@ export default function ResidentPortal({ onLogout }) {
   const [groupSuccess, setGroupSuccess] = useState(false);
   const [workerSuccess, setWorkerSuccess] = useState(false);
   const [deliverySuccess, setDeliverySuccess] = useState(false);
-  const [cardReported, setCardReported] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [vehicles, setVehicles] = useState([]);
   const [profile, setProfile] = useState(null);
@@ -306,28 +305,6 @@ export default function ResidentPortal({ onLogout }) {
     }
   };
 
-  // --------------------------------------------
-  // Access Controls - Report Lost Keycard
-  // --------------------------------------------
-  const handleLostCard = async () => {
-    try {
-      const response = await fetch(`${API}/resident/report-lost-card/${residentId}`, {
-        method: "POST"
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail);
-      }
-
-      setCardReported(true);
-      alert(data.message);
-
-    } catch (err) {
-      alert(err.message);
-    }
-  };
 
   // --------------------------------------------
   // Verification Ingestion - Gate Check Queue
@@ -786,76 +763,54 @@ export default function ResidentPortal({ onLogout }) {
               </form>
             </div>
           </div>
-
-          <div className="flex flex-col space-y-6 h-full">
-            <div className="bg-gray-900 rounded-xl border border-gray-800 flex flex-col flex-1 shadow-lg">
-              <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-950/30 rounded-t-xl">
-                <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Alerts Inbox</h2>
-                <span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>
+          <div className="flex flex-col space-y-6">
+            <div className="bg-gray-900 rounded-xl border border-gray-800 flex flex-col shadow-lg overflow-hidden">
+              <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-950/30">
+                <h2 className="text-base font-bold text-gray-400 uppercase tracking-wider">Alerts Inbox</h2>
+                <span className="flex h-3 w-3 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </span>
               </div>
 
-              {/* 🛠️ Capped height and custom dark scrollbars applied below */}
               <div
-                className="p-4 space-y-3 overflow-y-auto h-[500px]"
+                className="p-4 space-y-4 overflow-y-auto max-h-[600px]"
                 style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}
               >
-                {
-                  alerts.length === 0 ? (
-
-                    <div className="text-green-400 text-sm">
-                      No active security alerts.
-                    </div>
-
-                  ) : (
-
-                    alerts.map(alert => (
-
-                      <div
-                        key={alert._id}
-                        className="border border-red-700 rounded-lg p-4 mb-3 bg-red-950/20"
-                      >
-
-                        <div className="flex justify-between">
-
-                          <span className="font-bold text-red-400">
-                            {alert.severity}
-                          </span>
-
-                          <span className="text-xs text-gray-400">
-                            {alert.status}
-                          </span>
-
-                        </div>
-
-                        <h3 className="font-semibold text-white mt-2">
-                          {alert.signal_type}
-                        </h3>
-
-                        <p className="mt-2 text-gray-300">
-                          {alert.summary}
-                        </p>
-
-                        <p className="mt-2 text-sm text-blue-300">
-                          {alert.recommended_action}
-                        </p>
-
+                {alerts.length === 0 ? (
+                  <div className="text-green-400 text-base py-6 italic text-center">
+                    No active security alerts.
+                  </div>
+                ) : (
+                  alerts.map(alert => (
+                    <div
+                      key={alert._id}
+                      className="border border-red-700 rounded-lg p-5 bg-red-950/20 mb-4 last:mb-0 transition hover:border-red-600 shadow-md"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="font-extrabold text-red-400 text-sm tracking-wider uppercase">
+                          {alert.severity}
+                        </span>
                       </div>
 
-                    ))
+                      <h3 className="font-bold text-white mt-3 text-lg tracking-wide">
+                        {alert.signal_type}
+                      </h3>
 
-                  )
-                }
+                      {/* Enlarged general summary description text */}
+                      <p className="mt-2.5 text-sm text-gray-200 leading-relaxed font-normal">
+                        {alert.summary}
+                      </p>
 
+                      {/* Enlarged internal action payload notice box */}
+                      <div className="mt-4 bg-blue-950/40 border-l-4 border-blue-500 p-3.5 rounded text-sm text-blue-200 leading-relaxed">
+                        <strong className="text-blue-400 font-semibold">Action Required:</strong> {alert.recommended_action}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-
             </div>
-
-            <button
-              onClick={handleLostCard}
-              disabled={cardReported}
-              className={`w-full font-bold py-4 px-4 rounded-xl transition shadow-lg ${cardReported ? 'bg-gray-800 text-gray-500 border-gray-700' : 'bg-red-900/80 hover:bg-red-800 text-red-100 border border-red-700'}`}>
-              {cardReported ? 'Card Locked & Security Notified' : 'Report Lost Card'}
-            </button>
           </div>
         </div>
       </main>

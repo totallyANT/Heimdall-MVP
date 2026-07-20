@@ -1,42 +1,12 @@
-from fastapi import APIRouter
-from models.alert_action import AlertAction
-from database import security_db
+from fastapi import APIRouter, HTTPException
+from schema import AlertAction
+from database import db
+from bson import ObjectId
 
-router = APIRouter()
-
-
-@router.get("/simulate-alert")
-def simulate_alert():
-
-    return {
-        "alertId": "ALT001",
-        "type": "IDENTITY_THEFT_SUSPECT",
-        "location": "server_room_door",
-
-        "profile": {
-            "residentId": "RES250",
-            "name": "Bob Vance",
-            "trustScore": 70,
-            "pastInfractions": 2
-        },
-
-        "locationHistory": {
-            "lastLocation": "North Gate",
-            "incidentsToday": 0
-        },
-
-        "globalSync": {
-            "status": "Clear"
-        },
-
-        "reason":
-        "Tailgating anomaly detected. Subject Bob Vance swiped access card but perimeter cameras detected an unauthorized individual following closely behind."
-    }
-
+router = APIRouter(prefix="/security", tags=["Guard Action Logs"])
 
 @router.post("/alert-action")
-def alert_action(data: AlertAction):
-
+def log_alert_action(data: AlertAction):
     record = {
         "alertId": data.alertId,
         "guardId": data.guardId,
@@ -44,10 +14,30 @@ def alert_action(data: AlertAction):
         "action": data.action,
         "reason": data.reason
     }
+    result = db.alert_actions.insert_one(record)
 
-    result =  security_db.alert_actions.insert_one(record)
+    if data.decision == "RESOLVE":
+        db.alerts.update_one(
+            {"_id": ObjectId(data.alertId)},
+            {"$set": {
+                "resolved": True,
+                "dismissed": False,
+                "status": "RESOLVED"
+            }}
+        )
+    elif data.decision == "DISMISS":
+        db.alerts.update_one(
+            {"_id": ObjectId(data.alertId)},
+            {"$set": {
+                "resolved": False,
+                "dismissed": True,
+                "status": "DISMISSED"
+            }}
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid decision type action command")
 
     return {
-        "message": "Action recorded successfully",
-        "id": str(result.inserted_id)
+        "message": f"Alert state updated to {data.decision} successfully",
+        "log_id": str(result.inserted_id)
     }

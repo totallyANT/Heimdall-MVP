@@ -1,29 +1,11 @@
-import asyncio
+from services.seed_service import run_full_seed
 
-from services.seed_service import (
-    clear_database,
-    seed_residents,
-    seed_guards,
-    seed_admins
-)
-
-
-async def main():
-
+def main():
     print("\n========== Heimdall Database Seeder ==========\n")
-
-    await clear_database()
-
-    await seed_residents()
-
-    await seed_guards()
-
-    await seed_admins()
-
+    run_full_seed()
     print("\n==============================================")
-    print("Database seeded successfully.")
+    print("Database initialization complete.")
     print("==============================================\n")
 
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

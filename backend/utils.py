@@ -1,24 +1,6 @@
-from database import db
-from datetime import datetime
+import random
+import string
 
-
-async def log_scan(
-    pass_id,
-    pass_type,
-    action,
-    status,
-    reason=None,
-    current_status=None
-):
-    log = {
-        "passId": pass_id,
-        "passType": pass_type,
-        "action": action,
-        "status": status,
-        "timestamp": datetime.utcnow()
-    }
-
-    if reason:
-        log["reason"] = reason
-
-    await db.scan_logs.insert_one(log)
+def generate_password():
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(6))
