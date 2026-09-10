@@ -1,6 +1,6 @@
 # Heimdall — AI-Powered Residential Security Platform
 
-> **Note:** This project is an MVP (Minimum Viable Product) built during an internship at **AIMLABS**. It was developed as a proof-of-concept and is not production-hardened — expect rough edges, incomplete error handling, and demo-oriented shortcuts throughout the codebase.
+This project is an MVP (Minimum Viable Product) built during an internship at **AIMLABS**. It was developed as a proof-of-concept, this is a fork of the initial repository and does not contain any extra changes except for the addition of this README.
 
 ## What is Heimdall?
 
