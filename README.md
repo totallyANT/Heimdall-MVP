@@ -1,4 +1,4 @@
-This README was made by AI.
+This README was made by AI and verified personally for discrepancies.
 
 This project is an MVP (Minimum Viable Product) built during an internship at **AIMLABS**. It was developed as a proof-of-concept, this is a fork of the initial repository and does not contain any extra changes except for the addition of this README.
 
