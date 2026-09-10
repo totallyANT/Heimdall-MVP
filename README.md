@@ -1,8 +1,10 @@
-# Heimdall — AI-Powered Residential Security Platform
+This README was made by AI.
 
 This project is an MVP (Minimum Viable Product) built during an internship at **AIMLABS**. It was developed as a proof-of-concept, this is a fork of the initial repository and does not contain any extra changes except for the addition of this README.
 
 ## What is Heimdall?
+
+# Heimdall — AI-Powered Residential Security Platform
 
 Heimdall is a residential/gated-community security management system. It combines:
 
