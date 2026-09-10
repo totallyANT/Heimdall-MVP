@@ -1,3 +1,4 @@
+import os
 import customtkinter as ctk
 import cv2
 import face_recognition
@@ -7,7 +8,10 @@ from PIL import Image, ImageTk
 import threading
 import time
 from datetime import datetime
+from dotenv import load_dotenv
 from pymongo import MongoClient
+
+load_dotenv()
 
 # --- 1. GLOBAL STATE & THEME ---
 ctk.set_appearance_mode("light")
@@ -23,7 +27,7 @@ known_face_names = []
 db_sync_lock = threading.Lock()
 
 # --- 2. MONGODB CONFIGURATION ---
-MONGO_URI = "mongodb+srv://dheerajh-reddy:ww6wrUHQbA4X80gS@cluster0.3pq8guh.mongodb.net/?appName=Cluster0"
+MONGO_URI = os.getenv("MONGO_URI")
 
 try:
     print("Connecting to MongoDB Atlas 'heimdall' Cluster...")

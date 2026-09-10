@@ -8,7 +8,10 @@ import time
 import os
 import random
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 from pymongo import MongoClient
+
+load_dotenv()
 
 # --- 1. GLOBAL STATE & THEME ---
 ctk.set_appearance_mode("light")
@@ -18,11 +21,11 @@ LATEST_FRAME = None
 FRAME_LOCK = threading.Lock()
 
 # Toggle switches to control what the camera looks for
-SCAN_MODE = "IDLE" 
+SCAN_MODE = "IDLE"
 QR_RESULT = None
 
 # --- 2. MONGODB CONFIGURATION ---
-MONGO_URI = "mongodb+srv://dheerajh-reddy:ww6wrUHQbA4X80gS@cluster0.3pq8guh.mongodb.net/?appName=Cluster0"
+MONGO_URI = os.getenv("MONGO_URI")
 
 try:
     print("Connecting to MongoDB Atlas 'heimdall' Cluster...")
